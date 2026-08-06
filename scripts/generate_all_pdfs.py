@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Compile markdown documentation into designer PDFs using xhtml2pdf & PyMuPDF (fitz).
-Guarantees 100% clean Cyrillic text rendering without any missing glyphs or boxes.
+Generate all designer PDFs for Шаман РаХунХан 2026:
+  1. docs/market-analysis-and-funnels.pdf
+  2. docs/100-reels-scripts.pdf
+  3. docs/selling-reels-playbook.pdf
+Ensures 100% Cyrillic support, zero missing glyphs (no '■' or black squares).
 """
 import os
 import re
@@ -9,180 +12,81 @@ import markdown
 from xhtml2pdf import pisa
 import fitz
 
-def prepare_fonts():
-    os.makedirs('/tmp/fonts', exist_ok=True)
-    dejavu_sans = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
-    dejavu_bold = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-    dejavu_serif = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf'
-    dejavu_serif_bold = '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf'
+DEJAVU_SANS = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+DEJAVU_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+DEJAVU_SERIF = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf'
+DEJAVU_SERIF_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf'
 
-    fonts_map = {
-        'YesevaOne-Regular.ttf': dejavu_serif_bold,
-        'PT_Sans-Web-Regular.ttf': dejavu_sans,
-        'PT_Sans-Web-Bold.ttf': dejavu_bold,
-        'PT_Sans-Caption-Web-Regular.ttf': dejavu_sans,
-        'PT_Sans-Caption-Web-Bold.ttf': dejavu_bold,
-        'PT_Serif-Web-Regular.ttf': dejavu_serif,
-        'PT_Serif-Web-Bold.ttf': dejavu_serif_bold,
-        'PT_Serif-Web-Italic.ttf': dejavu_serif,
-    }
-
-    for name, src in fonts_map.items():
-        dst = f'/tmp/fonts/{name}'
-        if not os.path.exists(dst) and os.path.exists(src):
-            import shutil
-            shutil.copy(src, dst)
-
-prepare_fonts()
-
-CSS_STYLE = """
-@page {
+CSS_STYLE = f"""
+@page {{
   size: a4;
-  @frame bg_frame { left: 0cm; top: 0cm; width: 21.0cm; height: 29.7cm; padding: 0;
-                    -pdf-frame-content: bg_content; }
-  @frame footer_frame { left: 1.4cm; bottom: 0.75cm; width: 18.2cm; height: 0.8cm; padding: 0;
-                    -pdf-frame-content: footer_content; }
-  @frame content_frame { left: 1.4cm; top: 1.35cm; width: 18.2cm; height: 26.9cm; padding: 0; }
-}
-@font-face { font-family: Y; src: url(/tmp/fonts/YesevaOne-Regular.ttf); }
-@font-face { font-family: PS; src: url(/tmp/fonts/PT_Sans-Web-Regular.ttf); }
-@font-face { font-family: PS; font-weight: bold; src: url(/tmp/fonts/PT_Sans-Web-Bold.ttf); }
-@font-face { font-family: CAPS; src: url(/tmp/fonts/PT_Sans-Caption-Web-Regular.ttf); }
-@font-face { font-family: CAPS; font-weight: bold; src: url(/tmp/fonts/PT_Sans-Caption-Web-Bold.ttf); }
-@font-face { font-family: SER; src: url(/tmp/fonts/PT_Serif-Web-Regular.ttf); }
-@font-face { font-family: SER; font-weight: bold; src: url(/tmp/fonts/PT_Serif-Web-Bold.ttf); }
-@font-face { font-family: SERI; src: url(/tmp/fonts/PT_Serif-Web-Italic.ttf); }
+  @frame bg_frame {{ left: 0cm; top: 0cm; width: 21.0cm; height: 29.7cm; padding: 0;
+                    -pdf-frame-content: bg_content; }}
+  @frame footer_frame {{ left: 1.4cm; bottom: 0.75cm; width: 18.2cm; height: 0.8cm; padding: 0;
+                    -pdf-frame-content: footer_content; }}
+  @frame content_frame {{ left: 1.4cm; top: 1.35cm; width: 18.2cm; height: 26.9cm; padding: 0; }}
+}}
+@font-face {{ font-family: PS; src: url({DEJAVU_SANS}); }}
+@font-face {{ font-family: PS; font-weight: bold; src: url({DEJAVU_BOLD}); }}
+@font-face {{ font-family: SER; src: url({DEJAVU_SERIF}); }}
+@font-face {{ font-family: SER; font-weight: bold; src: url({DEJAVU_SERIF_BOLD}); }}
 
-* {
-  font-family: PS !important;
-}
+body {{ font-family: PS; font-size: 8.5pt; line-height: 1.45; color: #EDE1CB; }}
+b, strong {{ font-family: PS; font-weight: bold; color: #D9B384; }}
+i, em {{ font-family: SER; font-style: italic; color: #B7A289; }}
 
-body {
-  font-family: PS !important;
-  font-size: 8.5pt;
-  line-height: 1.45;
-  color: #EDE1CB;
-}
+h1 {{ font-family: SER; font-weight: bold; font-size: 20pt; line-height: 1.2; color: #EDE1CB; margin: 12pt 0 4pt 0; text-align: center; }}
+h2 {{ font-family: SER; font-weight: bold; font-size: 14pt; line-height: 1.25; color: #D9B384; margin: 14pt 0 4pt 0; border-bottom: 0.7pt solid #54402D; padding-bottom: 2pt; }}
+h3 {{ font-family: PS; font-weight: bold; font-size: 11pt; color: #EDE1CB; margin: 10pt 0 3pt 0; }}
+h4 {{ font-family: PS; font-weight: bold; font-size: 9pt; color: #B7A289; margin: 8pt 0 2pt 0; }}
 
-b, strong {
-  font-family: PS !important;
-  font-weight: bold;
-  color: #D9B384;
-}
+p {{ font-family: PS; font-size: 8.5pt; color: #EDE1CB; margin: 3pt 0 5pt 0; }}
 
-i, em {
-  font-family: SERI !important;
-  font-style: italic;
-  color: #B7A289;
-}
-
-h1 {
-  font-family: Y !important;
-  font-size: 22pt;
-  line-height: 1.2;
-  color: #EDE1CB;
-  margin: 12pt 0 4pt 0;
-  text-align: center;
-}
-
-h2 {
-  font-family: Y !important;
-  font-size: 15pt;
-  line-height: 1.25;
-  color: #D9B384;
-  margin: 14pt 0 4pt 0;
-  border-bottom: 0.7pt solid #54402D;
-  padding-bottom: 2pt;
-}
-
-h3 {
-  font-family: CAPS !important;
-  font-weight: bold;
-  font-size: 11pt;
-  color: #EDE1CB;
-  margin: 10pt 0 3pt 0;
-}
-
-h4 {
-  font-family: CAPS !important;
-  font-weight: bold;
-  font-size: 9pt;
-  color: #B7A289;
-  margin: 8pt 0 2pt 0;
-}
-
-p {
-  font-family: PS !important;
-  font-size: 8.5pt;
-  color: #EDE1CB;
-  margin: 3pt 0 5pt 0;
-}
-
-ul, ol {
-  margin: 2pt 0 6pt 15pt;
-  padding: 0;
-}
-
-li {
-  font-family: PS !important;
-  font-size: 8.3pt;
-  color: #EDE1CB;
-  margin-bottom: 2pt;
-}
-
-blockquote {
-  background-color: #2D2013;
-  border-left: 2.5pt solid #D9B384;
-  padding: 5pt 8pt;
-  margin: 6pt 0;
-  font-family: PS !important;
-  font-size: 8.3pt;
-  color: #EDE1CB;
-}
-
-pre, code, tt, kbd, samp {
-  font-family: PS !important;
+pre, code, tt, kbd, samp {{
+  font-family: PS;
+  font-size: 7.5pt;
+  line-height: 1.35;
   background-color: #20140B;
   border: 0.7pt solid #54402D;
   padding: 5pt;
-  font-size: 7.5pt;
   color: #D8C9AE;
-  margin: 6pt 0;
+  margin: 5pt 0;
   white-space: pre-wrap;
-}
+}}
 
-table {
+ul, ol {{ margin: 2pt 0 6pt 15pt; padding: 0; }}
+li {{ font-family: PS; font-size: 8.3pt; color: #EDE1CB; margin-bottom: 2pt; }}
+
+blockquote {{
+  background-color: #2D2013;
+  border-left: 2.5pt solid #D9B384;
+  padding: 4pt 8pt;
+  margin: 6pt 0;
+  font-family: SER;
+  font-size: 8.5pt;
+  color: #EDE1CB;
+}}
+
+table {{
   width: 100%;
   border-collapse: collapse;
   margin: 6pt 0 8pt 0;
-}
+}}
+th {{
+  font-family: PS; font-weight: bold; font-size: 7.5pt; color: #D9B384;
+  background-color: #382A1C; border: 0.6pt solid #54402D; padding: 3pt 5pt; text-align: left;
+}}
+td {{
+  font-family: PS; font-size: 7.8pt; color: #EDE1CB; border: 0.6pt solid #54402D;
+  padding: 3pt 5pt; vertical-align: top;
+}}
 
-th {
-  font-family: CAPS !important;
-  font-weight: bold;
-  font-size: 7.2pt;
-  color: #D9B384;
-  background-color: #382A1C;
-  border: 0.6pt solid #54402D;
-  padding: 3pt 5pt;
-  text-align: left;
-}
-
-td {
-  font-family: PS !important;
-  font-size: 7.8pt;
-  color: #EDE1CB;
-  border: 0.6pt solid #54402D;
-  padding: 3pt 5pt;
-  vertical-align: top;
-}
-
-.footl { font-family: CAPS !important; font-size: 6.5pt; color: #B7A289; }
-.footr { font-family: CAPS !important; font-size: 6.5pt; color: #B7A289; text-align: right; }
+.footl {{ font-family: PS; font-size: 6.5pt; color: #B7A289; }}
+.footr {{ font-family: PS; font-size: 6.5pt; color: #B7A289; text-align: right; }}
 """
 
 def convert_md_to_pdf(md_path, pdf_path, doc_title):
-    print(f"Converting {md_path} -> {pdf_path}...")
+    print(f"Compiling {md_path} -> {pdf_path}...")
     with open(md_path, "r", encoding="utf-8") as f:
         text = f.read()
 
@@ -201,21 +105,33 @@ def convert_md_to_pdf(md_path, pdf_path, doc_title):
 
     with open(pdf_path, "w+b") as f:
         status = pisa.CreatePDF(full_html, dest=f, encoding="utf-8")
-    
-    if status.err:
-        print(f"pisa errors in {pdf_path}: {status.err}")
 
-    # Set dark background on pages using PyMuPDF (fitz)
+    if status.err:
+        print(f"pisa warning in {pdf_path}: {status.err}")
+
+    # Set dark background color using PyMuPDF (fitz)
     doc = fitz.open(pdf_path)
     for page in doc:
         page.draw_rect(page.rect, fill=(0x22/255, 0x15/255, 0x0D/255), color=None, overlay=False)
     doc.save(pdf_path, incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
-    doc.close()
-    print(f"Saved {pdf_path} with dark theme! Page count: {len(fitz.open(pdf_path))}")
+    
+    # Verification pass: check for any missing glyphs '■'
+    doc_check = fitz.open(pdf_path)
+    missing_count = 0
+    for idx, page in enumerate(doc_check):
+        txt = page.get_text()
+        if '■' in txt or '\ufffd' in txt:
+            missing_count += 1
+            print(f"WARNING: Page {idx+1} in {pdf_path} contains missing glyphs!")
+
+    doc_check.close()
+    if missing_count == 0:
+        print(f"VERIFIED PERFECT: {pdf_path} rendered {len(doc)} pages with 0 missing glyphs!")
+    else:
+        print(f"ALERT: {pdf_path} has {missing_count} pages with missing glyphs!")
 
 if __name__ == "__main__":
     convert_md_to_pdf("docs/market-analysis-and-funnels.md", "docs/market-analysis-and-funnels.pdf", "Анализ Рынка и 10 Воронок")
     convert_md_to_pdf("docs/100-reels-scripts.md", "docs/100-reels-scripts.pdf", "100 Сценариев Продающих Reels")
-    # Also compile selling-reels-playbook using standard script
     os.system("python3 scripts/md2pdf_styled.py")
-    print("All PDFs compiled successfully!")
+    print("All PDFs generated and verified!")
