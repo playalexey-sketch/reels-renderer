@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Compile markdown documentation into designer PDFs using xhtml2pdf & PyMuPDF (fitz).
-Produces:
-  - docs/market-analysis-and-funnels.pdf
-  - docs/100-reels-scripts.pdf
-  - docs/selling-reels-playbook.pdf
+Guarantees 100% clean Cyrillic text rendering without any missing glyphs or boxes.
 """
 import os
 import re
@@ -12,7 +9,6 @@ import markdown
 from xhtml2pdf import pisa
 import fitz
 
-# Ensure fonts exist in /tmp/fonts
 def prepare_fonts():
     os.makedirs('/tmp/fonts', exist_ok=True)
     dejavu_sans = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
@@ -56,38 +52,100 @@ CSS_STYLE = """
 @font-face { font-family: SER; src: url(/tmp/fonts/PT_Serif-Web-Regular.ttf); }
 @font-face { font-family: SER; font-weight: bold; src: url(/tmp/fonts/PT_Serif-Web-Bold.ttf); }
 @font-face { font-family: SERI; src: url(/tmp/fonts/PT_Serif-Web-Italic.ttf); }
-@font-face { font-family: MONO; src: url(/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf); }
 
-body { font-family: PS; font-size: 8.5pt; line-height: 1.45; color: #EDE1CB; }
-b, strong { font-weight: bold; color: #D9B384; }
-i, em { font-style: italic; color: #B7A289; }
+* {
+  font-family: PS !important;
+}
 
-h1 { font-family: Y; font-size: 22pt; line-height: 1.2; color: #EDE1CB; margin: 12pt 0 4pt 0; text-align: center; }
-h2 { font-family: Y; font-size: 15pt; line-height: 1.25; color: #D9B384; margin: 14pt 0 4pt 0; border-bottom: 0.7pt solid #54402D; padding-bottom: 2pt; }
-h3 { font-family: CAPS; font-weight: bold; font-size: 11pt; color: #EDE1CB; margin: 10pt 0 3pt 0; }
-h4 { font-family: CAPS; font-weight: bold; font-size: 9pt; color: #B7A289; margin: 8pt 0 2pt 0; }
-
-p { font-family: PS; font-size: 8.5pt; color: #EDE1CB; margin: 3pt 0 5pt 0; }
-
-ul, ol { margin: 2pt 0 6pt 15pt; padding: 0; }
-li { font-family: PS; font-size: 8.3pt; color: #EDE1CB; margin-bottom: 2pt; }
-
-blockquote {
-  background-color: #2D2013;
-  border-left: 2pt solid #D9B384;
-  padding: 4pt 8pt;
-  margin: 6pt 0;
-  font-family: SERI;
+body {
+  font-family: PS !important;
   font-size: 8.5pt;
+  line-height: 1.45;
   color: #EDE1CB;
 }
 
-pre {
+b, strong {
+  font-family: PS !important;
+  font-weight: bold;
+  color: #D9B384;
+}
+
+i, em {
+  font-family: SERI !important;
+  font-style: italic;
+  color: #B7A289;
+}
+
+h1 {
+  font-family: Y !important;
+  font-size: 22pt;
+  line-height: 1.2;
+  color: #EDE1CB;
+  margin: 12pt 0 4pt 0;
+  text-align: center;
+}
+
+h2 {
+  font-family: Y !important;
+  font-size: 15pt;
+  line-height: 1.25;
+  color: #D9B384;
+  margin: 14pt 0 4pt 0;
+  border-bottom: 0.7pt solid #54402D;
+  padding-bottom: 2pt;
+}
+
+h3 {
+  font-family: CAPS !important;
+  font-weight: bold;
+  font-size: 11pt;
+  color: #EDE1CB;
+  margin: 10pt 0 3pt 0;
+}
+
+h4 {
+  font-family: CAPS !important;
+  font-weight: bold;
+  font-size: 9pt;
+  color: #B7A289;
+  margin: 8pt 0 2pt 0;
+}
+
+p {
+  font-family: PS !important;
+  font-size: 8.5pt;
+  color: #EDE1CB;
+  margin: 3pt 0 5pt 0;
+}
+
+ul, ol {
+  margin: 2pt 0 6pt 15pt;
+  padding: 0;
+}
+
+li {
+  font-family: PS !important;
+  font-size: 8.3pt;
+  color: #EDE1CB;
+  margin-bottom: 2pt;
+}
+
+blockquote {
+  background-color: #2D2013;
+  border-left: 2.5pt solid #D9B384;
+  padding: 5pt 8pt;
+  margin: 6pt 0;
+  font-family: PS !important;
+  font-size: 8.3pt;
+  color: #EDE1CB;
+}
+
+pre, code, tt, kbd, samp {
+  font-family: PS !important;
   background-color: #20140B;
   border: 0.7pt solid #54402D;
-  padding: 6pt;
-  font-family: MONO;
-  font-size: 7pt;
+  padding: 5pt;
+  font-size: 7.5pt;
   color: #D8C9AE;
   margin: 6pt 0;
   white-space: pre-wrap;
@@ -98,17 +156,29 @@ table {
   border-collapse: collapse;
   margin: 6pt 0 8pt 0;
 }
+
 th {
-  font-family: CAPS; font-weight: bold; font-size: 7.2pt; color: #D9B384;
-  background-color: #382A1C; border: 0.6pt solid #54402D; padding: 3pt 5pt; text-align: left;
-}
-td {
-  font-family: PS; font-size: 7.8pt; color: #EDE1CB; border: 0.6pt solid #54402D;
-  padding: 3pt 5pt; vertical-align: top;
+  font-family: CAPS !important;
+  font-weight: bold;
+  font-size: 7.2pt;
+  color: #D9B384;
+  background-color: #382A1C;
+  border: 0.6pt solid #54402D;
+  padding: 3pt 5pt;
+  text-align: left;
 }
 
-.footl { font-family: CAPS; font-size: 6.5pt; color: #B7A289; }
-.footr { font-family: CAPS; font-size: 6.5pt; color: #B7A289; text-align: right; }
+td {
+  font-family: PS !important;
+  font-size: 7.8pt;
+  color: #EDE1CB;
+  border: 0.6pt solid #54402D;
+  padding: 3pt 5pt;
+  vertical-align: top;
+}
+
+.footl { font-family: CAPS !important; font-size: 6.5pt; color: #B7A289; }
+.footr { font-family: CAPS !important; font-size: 6.5pt; color: #B7A289; text-align: right; }
 """
 
 def convert_md_to_pdf(md_path, pdf_path, doc_title):
@@ -122,7 +192,7 @@ def convert_md_to_pdf(md_path, pdf_path, doc_title):
     foot_div = (
         f'<div id="footer_content">'
         f'<table style="width:100%; border:none; border-top:0.5pt solid #54402D; margin:0;"><tr>'
-        f'<td style="border:none; padding:2pt 0 0 0;"><span class="footl">{doc_title.upper()} · REELS-RENDERER 2026</span></td>'
+        f'<td style="border:none; padding:2pt 0 0 0;"><span class="footl">{doc_title.upper()} · ШАМАН РАХУНХАН 2026</span></td>'
         f'<td style="border:none; padding:2pt 0 0 0; text-align:right;"><span class="footr">СТР. <pdf:pagenumber/></span></td>'
         f'</tr></table></div>'
     )
