@@ -1,0 +1,90 @@
+# -*- coding: utf-8 -*-
+"""Generate clean SVG diagram for Funnel Architecture 2026."""
+
+svg_content = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" style="background-color: #1A1009; font-family: 'PT Sans', Arial, sans-serif;">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E5C396" />
+      <stop offset="100%" stop-color="#B89362" />
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2A1B12" />
+      <stop offset="100%" stop-color="#1F130B" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3D2619" />
+      <stop offset="100%" stop-color="#28170E" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Title & Header -->
+  <text x="600" y="50" text-anchor="middle" fill="#E5C396" font-size="26" font-weight="bold" letter-spacing="2">ЭКОСИСТЕМА НЕЙРО-ВОРОНОК 2026</text>
+  <text x="600" y="80" text-anchor="middle" fill="#A89481" font-size="15">Сквозная архитектурная карта: 100 Reels → 10 Лид-магнитов → Микро-продукты → Клуб «Царство» &amp; «Траектория»</text>
+
+  <!-- Level 1: 100 REELS -->
+  <rect x="100" y="120" width="1000" height="70" rx="12" fill="url(#cardGrad)" stroke="#54402D" stroke-width="1.5" />
+  <text x="600" y="152" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="bold">100 ПРОДАЮЩИХ REELS / SHORTS (10 БЛОКОВ ПО 10 ТЕМ)</text>
+  <text x="600" y="175" text-anchor="middle" fill="#E5C396" font-size="13">PAS · AIDA · BAB · Storytelling · Разрушение Мифов · Чек-листы · Провокации · ASMR-процессы</text>
+
+  <!-- Arrow down 1 -->
+  <path d="M 600 190 L 600 230" stroke="#B89362" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <!-- Level 2: 10 LEAD MAGNETS -->
+  <rect x="100" y="230" width="1000" height="90" rx="12" fill="url(#cardGrad)" stroke="#B89362" stroke-width="2" />
+  <text x="600" y="260" text-anchor="middle" fill="#E5C396" font-size="18" font-weight="bold">10 ЛИД-МАГНИТОВ (0 ₽) — МГНОВЕННАЯ ЦЕННОСТЬ B DM / TELEGRAM</text>
+  <text x="600" y="285" text-anchor="middle" fill="#D4C2B2" font-size="12">1. ИИ-Агент DM (1) | 2. ИИ-Аватар (2) | 3. Микро-воронка (3) | 4. ИИ-Аутрич (4) | 5. Нейро-Кастдев (5)</text>
+  <text x="600" y="305" text-anchor="middle" fill="#D4C2B2" font-size="12">6. Реанимация CRM (6) | 7. TG-Бот (7) | 8. Custom GPT (8) | 9. Оффер 180k (9) | 10. ИИ-Архитектура (10)</text>
+
+  <!-- Arrow down 2 -->
+  <path d="M 600 320 L 600 360" stroke="#B89362" stroke-width="2.5" />
+
+  <!-- Level 3: 10 MICRO-PRODUCTS -->
+  <rect x="150" y="360" width="900" height="80" rx="12" fill="url(#accentGrad)" stroke="#54402D" stroke-width="1.5" />
+  <text x="600" y="392" text-anchor="middle" fill="#FFFFFF" font-size="17" font-weight="bold">10 МИКРО-ПРОДУКТОВ (ДО 1 000 ₽) — ОКУПАЕМОСТЬ ТРАФИКА В ДЕНЬ 1</text>
+  <text x="600" y="418" text-anchor="middle" fill="#A89481" font-size="13">Промпт-паки (490–990 ₽) · JSON-шаблоны агентов · Калькуляторы · Конструкторы ботов</text>
+
+  <!-- Arrow down 3 -->
+  <path d="M 600 440 L 600 480" stroke="#B89362" stroke-width="2.5" />
+
+  <!-- Level 4: 10 MINI-PRODUCTS -->
+  <rect x="200" y="480" width="800" height="80" rx="12" fill="url(#cardGrad)" stroke="#B89362" stroke-width="1.5" />
+  <text x="600" y="512" text-anchor="middle" fill="#E5C396" font-size="17" font-weight="bold">10 МИНИ-ПРОДУКТОВ (ДО 5 000 ₽) — ГЛУБОКИЙ ПРАКТИКУМ И НАСТРОЙКА</text>
+  <text x="600" y="538" text-anchor="middle" fill="#D4C2B2" font-size="13">Интенсивы (2 900–4 900 ₽) · Воркшопы по нейросетям · Практикумы внедрения инструмента</text>
+
+  <!-- Diverging arrows to Tier 5 & Tier 6 -->
+  <path d="M 600 560 L 400 620" stroke="#E5C396" stroke-width="3" />
+  <path d="M 600 560 L 800 620" stroke="#E5C396" stroke-width="3" />
+
+  <!-- Level 5: STANDARD PRODUCT - TSARTSVO CLUB -->
+  <rect x="150" y="620" width="420" height="180" rx="16" fill="url(#cardGrad)" stroke="#B89362" stroke-width="2.5" filter="url(#glow)" />
+  <rect x="170" y="640" width="160" height="26" rx="6" fill="#3D2619" />
+  <text x="250" y="658" text-anchor="middle" fill="#E5C396" font-size="12" font-weight="bold">СТАНДАРТНЫЙ ПРОДУКТ</text>
+  <text x="360" y="682" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="bold">КЛУБ «ЦАРСТВО»</text>
+  <text x="360" y="710" text-anchor="middle" fill="#E5C396" font-size="20" font-weight="bold">12 000 ₽ / месяц</text>
+  <text x="360" y="738" text-anchor="middle" fill="#D4C2B2" font-size="13">• Рекуррентное сообщество экспертов</text>
+  <text x="360" y="756" text-anchor="middle" fill="#D4C2B2" font-size="13">• База обновляемых ИИ-агентов и промптов</text>
+  <text x="360" y="774" text-anchor="middle" fill="#D4C2B2" font-size="13">• Еженедельные мастермайнды и технический чат</text>
+
+  <!-- Level 6: FLAGSHIP - TRAEKTORIYA -->
+  <rect x="630" y="620" width="420" height="180" rx="16" fill="url(#cardGrad)" stroke="#E5C396" stroke-width="3" filter="url(#glow)" />
+  <rect x="650" y="640" width="160" height="26" rx="6" fill="#54402D" />
+  <text x="730" y="658" text-anchor="middle" fill="#E5C396" font-size="12" font-weight="bold">ФЛАГМАНСКИЙ ПРОДУКТ</text>
+  <text x="840" y="682" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="bold">«ТРАЕКТОРИЯ»</text>
+  <text x="840" y="710" text-anchor="middle" fill="#E5C396" font-size="20" font-weight="bold">от 180 000 ₽ / квартал</text>
+  <text x="840" y="738" text-anchor="middle" fill="#D4C2B2" font-size="13">• Индивидуальное наставничество</text>
+  <text x="840" y="756" text-anchor="middle" fill="#D4C2B2" font-size="13">• Архитектура ИИ-системы под ключ</text>
+  <text x="840" y="774" text-anchor="middle" fill="#D4C2B2" font-size="13">• Личная команда разработки и нейро-агентов</text>
+
+  <!-- Footer -->
+  <text x="600" y="850" text-anchor="middle" fill="#54402D" font-size="13">REELS-RENDERER · СМОСЛОВЫЕ ЦЕПОЧКИ И ИИ-АВТОМАТИЗАЦИЯ ПРОДАЖ · 2026</text>
+</svg>
+"""
+
+with open("/home/user/reels-renderer/docs/funnel-architecture-diagram.svg", "w", encoding="utf-8") as f:
+    f.write(svg_content)
+
+print("SVG diagram saved to docs/funnel-architecture-diagram.svg")
