@@ -19,63 +19,63 @@
   </defs>
 
   <!-- Title & Header -->
-  <text x="600" y="50" text-anchor="middle" fill="#E5C396" font-size="26" font-weight="bold" letter-spacing="2">ЭКОСИСТЕМА НЕЙРО-ВОРОНОК 2026</text>
-  <text x="600" y="80" text-anchor="middle" fill="#A89481" font-size="15">Сквозная архитектурная карта: 100 Reels → 10 Лид-магнитов → Микро-продукты → Клуб «Царство» &amp; «Траектория»</text>
+  <text x="600" y="50" text-anchor="middle" fill="#E5C396" font-size="26" font-weight="bold" letter-spacing="2">ШАМАН РАХУНХАН: ЭКОСИСТЕМА ИСЦЕЛЕНИЯ РОДА 2026</text>
+  <text x="600" y="80" text-anchor="middle" fill="#A89481" font-size="15">Сквозная воронка: 100 Reels → 10 Диагностик (0 ₽) → Обрядовые Микро-продукты → Клуб «Царство» &amp; «Траектория»</text>
 
   <!-- Level 1: 100 REELS -->
   <rect x="100" y="120" width="1000" height="70" rx="12" fill="url(#cardGrad)" stroke="#54402D" stroke-width="1.5" />
-  <text x="600" y="152" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="bold">100 ПРОДАЮЩИХ REELS / SHORTS (10 БЛОКОВ ПО 10 ТЕМ)</text>
-  <text x="600" y="175" text-anchor="middle" fill="#E5C396" font-size="13">PAS · AIDA · BAB · Storytelling · Разрушение Мифов · Чек-листы · Провокации · ASMR-процессы</text>
+  <text x="600" y="152" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="bold">100 ПРОДАЮЩИХ REELS (10 БЛОКОВ ПО 10 ТЕМ РОДОВЫХ БОЛЕЙ)</text>
+  <text x="600" y="175" text-anchor="middle" fill="#E5C396" font-size="13">PAS · AIDA · BAB · Сторителлинг · Разрушение Мифов · Сны · Защита Детей · Провокации · ASMR-обряды</text>
 
   <!-- Arrow down 1 -->
-  <path d="M 600 190 L 600 230" stroke="#B89362" stroke-width="2.5" marker-end="url(#arrow)" />
+  <path d="M 600 190 L 600 230" stroke="#B89362" stroke-width="2.5" />
 
   <!-- Level 2: 10 LEAD MAGNETS -->
   <rect x="100" y="230" width="1000" height="90" rx="12" fill="url(#cardGrad)" stroke="#B89362" stroke-width="2" />
-  <text x="600" y="260" text-anchor="middle" fill="#E5C396" font-size="18" font-weight="bold">10 ЛИД-МАГНИТОВ (0 ₽) — МГНОВЕННАЯ ЦЕННОСТЬ B DM / TELEGRAM</text>
-  <text x="600" y="285" text-anchor="middle" fill="#D4C2B2" font-size="12">1. ИИ-Агент DM (1) | 2. ИИ-Аватар (2) | 3. Микро-воронка (3) | 4. ИИ-Аутрич (4) | 5. Нейро-Кастдев (5)</text>
-  <text x="600" y="305" text-anchor="middle" fill="#D4C2B2" font-size="12">6. Реанимация CRM (6) | 7. TG-Бот (7) | 8. Custom GPT (8) | 9. Оффер 180k (9) | 10. ИИ-Архитектура (10)</text>
+  <text x="600" y="260" text-anchor="middle" fill="#E5C396" font-size="18" font-weight="bold">10 ДИАГНОСТИЧЕСКИХ ЛИД-МАГНИТОВ (0 ₽) В DM / TELEGRAM</text>
+  <text x="600" y="285" text-anchor="middle" fill="#D4C2B2" font-size="12">1. Сценарии Рода (1) | 2. Деньги Рода (2) | 3. Чужой Негатив (3) | 4. Обида на Маму (4) | 5. Вычеркнутые (5)</text>
+  <text x="600" y="305" text-anchor="middle" fill="#D4C2B2" font-size="12">6. Сны с Предками (6) | 7. Защита Детей (7) | 8. Утечки Силы (8) | 9. Безопасность (9) | 10. Древо Рода (10)</text>
 
   <!-- Arrow down 2 -->
   <path d="M 600 320 L 600 360" stroke="#B89362" stroke-width="2.5" />
 
   <!-- Level 3: 10 MICRO-PRODUCTS -->
   <rect x="150" y="360" width="900" height="80" rx="12" fill="url(#accentGrad)" stroke="#54402D" stroke-width="1.5" />
-  <text x="600" y="392" text-anchor="middle" fill="#FFFFFF" font-size="17" font-weight="bold">10 МИКРО-ПРОДУКТОВ (ДО 1 000 ₽) — ОКУПАЕМОСТЬ ТРАФИКА В ДЕНЬ 1</text>
-  <text x="600" y="418" text-anchor="middle" fill="#A89481" font-size="13">Промпт-паки (490–990 ₽) · JSON-шаблоны агентов · Калькуляторы · Конструкторы ботов</text>
+  <text x="600" y="392" text-anchor="middle" fill="#FFFFFF" font-size="17" font-weight="bold">10 МИКРО-ПРОДУКТОВ (ДО 1 000 ₽) — ОКУПАЕМОСТЬ ТРАФИКА B ДЕНЬ 1</text>
+  <text x="600" y="418" text-anchor="middle" fill="#A89481" font-size="13">Обрядовые паки (490–990 ₽) · Карты сценариев · Аудио-практики · Соляные чистки · Медитации</text>
 
   <!-- Arrow down 3 -->
   <path d="M 600 440 L 600 480" stroke="#B89362" stroke-width="2.5" />
 
   <!-- Level 4: 10 MINI-PRODUCTS -->
   <rect x="200" y="480" width="800" height="80" rx="12" fill="url(#cardGrad)" stroke="#B89362" stroke-width="1.5" />
-  <text x="600" y="512" text-anchor="middle" fill="#E5C396" font-size="17" font-weight="bold">10 МИНИ-ПРОДУКТОВ (ДО 5 000 ₽) — ГЛУБОКИЙ ПРАКТИКУМ И НАСТРОЙКА</text>
-  <text x="600" y="538" text-anchor="middle" fill="#D4C2B2" font-size="13">Интенсивы (2 900–4 900 ₽) · Воркшопы по нейросетям · Практикумы внедрения инструмента</text>
+  <text x="600" y="512" text-anchor="middle" fill="#E5C396" font-size="17" font-weight="bold">10 МИНИ-ПРОДУКТОВ (ДО 5 000 ₽) — ГЛУБОКИЕ ПРАКТИКУМЫ И ВОРКШОПЫ</text>
+  <text x="600" y="538" text-anchor="middle" fill="#D4C2B2" font-size="13">Интенсивы (2 900–4 900 ₽) · Исцеление линии рода · Снятие блоков · Защита детей</text>
 
-  <!-- Diverging arrows to Tier 5 & Tier 6 -->
+  <!-- Diverging arrows -->
   <path d="M 600 560 L 400 620" stroke="#E5C396" stroke-width="3" />
   <path d="M 600 560 L 800 620" stroke="#E5C396" stroke-width="3" />
 
-  <!-- Level 5: STANDARD PRODUCT - TSARTSVO CLUB -->
+  <!-- Level 5: TSARTSVO CLUB -->
   <rect x="150" y="620" width="420" height="180" rx="16" fill="url(#cardGrad)" stroke="#B89362" stroke-width="2.5" filter="url(#glow)" />
   <rect x="170" y="640" width="160" height="26" rx="6" fill="#3D2619" />
   <text x="250" y="658" text-anchor="middle" fill="#E5C396" font-size="12" font-weight="bold">СТАНДАРТНЫЙ ПРОДУКТ</text>
   <text x="360" y="682" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="bold">КЛУБ «ЦАРСТВО»</text>
   <text x="360" y="710" text-anchor="middle" fill="#E5C396" font-size="20" font-weight="bold">12 000 ₽ / месяц</text>
-  <text x="360" y="738" text-anchor="middle" fill="#D4C2B2" font-size="13">• Рекуррентное сообщество экспертов</text>
-  <text x="360" y="756" text-anchor="middle" fill="#D4C2B2" font-size="13">• База обновляемых ИИ-агентов и промптов</text>
-  <text x="360" y="774" text-anchor="middle" fill="#D4C2B2" font-size="13">• Еженедельные мастермайнды и технический чат</text>
+  <text x="360" y="738" text-anchor="middle" fill="#D4C2B2" font-size="13">• Закрытый круг силы Шамана РаХунХана</text>
+  <text x="360" y="756" text-anchor="middle" fill="#D4C2B2" font-size="13">• Ежемесячные обряды в дни силы (лунные циклы)</text>
+  <text x="360" y="774" text-anchor="middle" fill="#D4C2B2" font-size="13">• Поддерживающие чистки и родовой оберег</text>
 
-  <!-- Level 6: FLAGSHIP - TRAEKTORIYA -->
+  <!-- Level 6: TRAEKTORIYA -->
   <rect x="630" y="620" width="420" height="180" rx="16" fill="url(#cardGrad)" stroke="#E5C396" stroke-width="3" filter="url(#glow)" />
   <rect x="650" y="640" width="160" height="26" rx="6" fill="#54402D" />
   <text x="730" y="658" text-anchor="middle" fill="#E5C396" font-size="12" font-weight="bold">ФЛАГМАНСКИЙ ПРОДУКТ</text>
   <text x="840" y="682" text-anchor="middle" fill="#FFFFFF" font-size="22" font-weight="bold">«ТРАЕКТОРИЯ»</text>
   <text x="840" y="710" text-anchor="middle" fill="#E5C396" font-size="20" font-weight="bold">от 180 000 ₽ / квартал</text>
-  <text x="840" y="738" text-anchor="middle" fill="#D4C2B2" font-size="13">• Индивидуальное наставничество</text>
-  <text x="840" y="756" text-anchor="middle" fill="#D4C2B2" font-size="13">• Архитектура ИИ-системы под ключ</text>
-  <text x="840" y="774" text-anchor="middle" fill="#D4C2B2" font-size="13">• Личная команда разработки и нейро-агентов</text>
+  <text x="840" y="738" text-anchor="middle" fill="#D4C2B2" font-size="13">• Личное наставничество Шамана РаХунХана</text>
+  <text x="840" y="756" text-anchor="middle" fill="#D4C2B2" font-size="13">• Индивидуальные глубокие обряды снятия негатива</text>
+  <text x="840" y="774" text-anchor="middle" fill="#D4C2B2" font-size="13">• Полное исцеление судьбы и Родового Древа</text>
 
   <!-- Footer -->
-  <text x="600" y="850" text-anchor="middle" fill="#54402D" font-size="13">REELS-RENDERER · СМОСЛОВЫЕ ЦЕПОЧКИ И ИИ-АВТОМАТИЗАЦИЯ ПРОДАЖ · 2026</text>
+  <text x="600" y="850" text-anchor="middle" fill="#54402D" font-size="13">ШАМАН РАХУНХАН · ОЧИЩЕНИЕ И ИСЦЕЛЕНИЕ РОДА · 2026</text>
 </svg>
