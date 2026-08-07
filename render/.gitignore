@@ -4,5 +4,6 @@ vframes/
 check_*.png
 voice.wav
 states.npy
+plan.npz
 montage.png
 mouth_closeup.png

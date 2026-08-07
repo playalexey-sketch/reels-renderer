@@ -15,8 +15,8 @@ AUDIO = ROOT / "render" / "voice_xtts.wav" if (ROOT / "render" / "voice_xtts.wav
 
 
 def run_local_viseme():
-    subprocess.run([sys.executable, str(ROOT / "render" / "make_video_v2.py")], check=True)
-    shutil.copy(ROOT / "render" / "talking_avatar_5s.mp4", MATRIX / "local-viseme-v2.mp4")
+    subprocess.run([sys.executable, str(ROOT / "render" / "make_video_v3.py")], check=True)
+    shutil.copy(ROOT / "render" / "talking_avatar_5s.mp4", MATRIX / "local-morph-v3.mp4")
 
 
 def run_wav2lip_pytorch():
@@ -51,7 +51,7 @@ def run_wav2lip_onnx_hq():
 def main():
     MATRIX.mkdir(parents=True, exist_ok=True)
     engines = [
-        ("local-viseme-v2", "виземный рендер v2 (огибающая аудио, 3 визема)", run_local_viseme),
+        ("local-morph-v3", "непрерывный морфинг рта v3 (огибающая + артикуляционная динамика)", run_local_viseme),
         ("wav2lip-pytorch", "Wav2Lip (PyTorch, Rudrabha) — эталон точности синка", run_wav2lip_pytorch),
         ("wav2lip-onnx-hq", "Wav2Lip ONNX + GFPGAN (instant-high/guzmanvitar)", run_wav2lip_onnx_hq),
     ]
