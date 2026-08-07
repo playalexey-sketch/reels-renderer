@@ -25,6 +25,7 @@ def main(audio, out):
            "_tl=torch.load;"
            "torch.load=lambda *a,**k:_tl(*((a[0],torch.device('cpu'))+a[2:]) if len(a)>1 else a,**{**k,'weights_only':False,'map_location':torch.device('cpu')});"
            "np.VisibleDeprecationWarning=getattr(np,'VisibleDeprecationWarning',None) or __import__('numpy').exceptions.VisibleDeprecationWarning;"
+           "np.float=float;np.int=int;np.complex=complex;"
            f"sys.path.insert(0,'{HERE}');import st_patch;"
            "sys.argv=['inference.py',"
            f"'--driven_audio','{audio}',"
@@ -34,7 +35,7 @@ def main(audio, out):
            "'--preprocess','full',"
            "'--enhancer','none',"
            "'--cpu',"
-           "'--batch_size','4'];"
+           "'--batch_size','1'];"
            "runpy.run_path('inference.py',run_name='__main__')"]
     subprocess.run(cmd, check=True, cwd=st, env=env)
     vids = sorted(glob.glob(res_dir + "/*/*.mp4"))

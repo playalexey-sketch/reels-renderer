@@ -56,4 +56,47 @@ def _init_no_det(self, device="cuda"):
 
 
 _ek.KeypointExtractor.__init__ = _init_no_det
+
+
+# extract_keypoint без det_net: фиксированный bbox лица (аватар известен)
+import os as _os
+from facexlib.alignment import landmark_98_to_68 as _lm98to68
+
+
+def _one(self, image):
+    img = np.array(image)
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = int(W*0.18), int(H*0.10), int(W*0.82), int(H*0.62)
+    crop = img[y0:y1, x0:x1]
+    kp = _lm98to68(self.detector.get_landmarks(crop))
+    kp[:, 0] += x0
+    kp[:, 1] += y0
+    return kp
+
+
+def _fake_extract(self, images, name=None, info=True):
+    if isinstance(images, list):
+        kps = [self._one_im(im)[None] for im in images]
+        kps = np.concatenate(kps, 0)
+        if name:
+            np.savetxt(_os.path.splitext(name)[0] + ".txt", kps.reshape(-1))
+        return kps
+    return self._one_im(images)
+
+
+_ek.KeypointExtractor._one_im = _one
+_ek.KeypointExtractor.extract_keypoint = _fake_extract
+
+
+# POS иногда возвращает t/s не скалярами — приводим к скалярам
+import src.face3d.util.preprocess as _pp
+_orig_POS = _pp.POS
+
+
+def _POS(xp, x):
+    t, s = _orig_POS(xp, x)
+    return np.asarray(t, dtype=np.float64).ravel(), np.float64(np.asarray(s).ravel()[0])
+
+
+_pp.POS = _POS
 print("st_patch: detector bypassed (hardcoded 68 lm)")
