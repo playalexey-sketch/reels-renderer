@@ -28,7 +28,7 @@ def load_gfpgan():
     return model
 
 
-def enhance_frame(model, img, feather):
+def enhance_frame(model, img, feather, orig=None):
     crop = img[FY0:FY0+FS, FX0:FX0+FS]
     small = cv2.resize(crop, (512, 512), interpolation=cv2.INTER_LINEAR)
     x = (small.astype(np.float32)/255.0 - 0.5)/0.5
@@ -37,8 +37,10 @@ def enhance_frame(model, img, feather):
         out = model(t)[0]
     enh = out[0].numpy().transpose(1, 2, 0)
     enh = np.clip((enh*0.5 + 0.5)*255, 0, 255).astype(np.uint8)
-    # перенос мелких деталей (кожа/поры) с оригинала, чтобы не было «пластика»
-    detail = small.astype(np.float32) - cv2.GaussianBlur(small, (0, 0), 2.0).astype(np.float32)
+    # детали берём с исходного РЕЗКОГО фото, если оно передано (апскейл-случай)
+    src = orig[FY0:FY0+FS, FX0:FX0+FS] if orig is not None else crop
+    src512 = cv2.resize(src, (512, 512), interpolation=cv2.INTER_LINEAR)
+    detail = src512.astype(np.float32) - cv2.GaussianBlur(src512, (0, 0), 2.0).astype(np.float32)
     enh = np.clip(enh.astype(np.float32) + detail*0.6, 0, 255).astype(np.uint8)
     enh = cv2.resize(enh, (FS, FS), interpolation=cv2.INTER_LINEAR)
     blended = enh.astype(np.float32)
