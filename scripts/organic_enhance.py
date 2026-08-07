@@ -71,11 +71,23 @@ def face_feather():
     return np.clip(np.maximum(mouth, low), 0, 1)[..., None]
 
 
+def person_mask(img0):
+    mask = np.zeros(img0.shape[:2], np.uint8)
+    rect = (50, 60, 668, 1316)
+    bgd, fgd = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
+    cv2.grabCut(img0, mask, rect, bgd, fgd, 5, cv2.GC_INIT_WITH_RECT)
+    m = np.where((mask == 2) | (mask == 0), 0, 1).astype(np.float32)
+    m[1000:, :] = 1.0                      # торс целиком
+    m[:, :12] = 0; m[:, -12:] = 0; m[:12, :] = 0
+    m = cv2.GaussianBlur(m, (0, 0), 6)      # перо
+    return m[..., None]
+
+
 def head_transform(t, env):
-    ang = 0.9*math.sin(2*math.pi*0.21*t + 0.7) + 0.45*math.sin(2*math.pi*0.43*t)
-    tx = 3.0*math.sin(2*math.pi*0.17*t + 1.3)
-    ty = 2.2*math.sin(2*math.pi*0.25*t) + 2.5*env
-    sc = 1.0 + 0.004*math.sin(2*math.pi*0.13*t + 2.0)
+    ang = 0.8*math.sin(2*math.pi*0.19*t + 0.7) + 0.35*math.sin(2*math.pi*0.41*t + 2.1)
+    tx = 2.4*math.sin(2*math.pi*0.16*t + 1.3) + 0.8*math.sin(2*math.pi*0.37*t)
+    ty = 2.6*env + 1.4*math.sin(2*math.pi*0.24*t) + 0.6*math.sin(2*math.pi*0.52*t + 1.0)
+    sc = 1.0 + 0.003*math.sin(2*math.pi*0.12*t + 2.0)
     return ang, tx, ty, sc
 
 
@@ -94,6 +106,7 @@ def main(src, dst, blink_img_path):
     frames = sorted(glob.glob(vd + "/f_*.png"))
     n = len(frames)
     fps = 25
+    pm = person_mask(cv2.imread(frames[0]))
 
     # огибающая для кивка
     import wave
@@ -119,13 +132,14 @@ def main(src, dst, blink_img_path):
             if t0 <= t <= t0+d:
                 b = math.sin(math.pi*(t-t0)/d)**2
                 img = (img.astype(np.float32)*(1-ef*b) + blink.astype(np.float32)*(ef*b)).astype(np.uint8)
-        # живая голова
+        # живая голова: движется только человек, фон статичен
         ang, tx, ty, sc = head_transform(t, float(rms[min(int(t*100), len(rms)-1)]))
         Hh, Ww = img.shape[:2]
         M = cv2.getRotationMatrix2D((Ww/2, 500), ang, sc)
         M[0, 2] += tx
         M[1, 2] += ty
-        img = cv2.warpAffine(img, M, (Ww, Hh), borderMode=cv2.BORDER_REPLICATE)
+        warped = cv2.warpAffine(img, M, (Ww, Hh), borderMode=cv2.BORDER_REPLICATE)
+        img = (warped*pm + img*(1-pm)).astype(np.uint8)
         # финальный unsharp — хрусткость деталей
         blur = cv2.GaussianBlur(img, (0, 0), 1.2)
         img = cv2.addWeighted(img, 1.35, blur, -0.35, 0)
