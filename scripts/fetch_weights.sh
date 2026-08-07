@@ -53,8 +53,8 @@ if [ $g_ok -eq 0 ]; then
   fi
 fi
 
-if ls weights_chunks/voice_*.* >/dev/null 2>&1; then
+if ls weights_chunks/voice_*.* weights_chunks/Voice_*.* >/dev/null 2>&1; then
   mkdir -p "$RR/render/voices"
-  cp -f weights_chunks/voice_*.* "$RR/render/voices/"
+  cp -f weights_chunks/voice_*.* weights_chunks/Voice_*.* "$RR/render/voices/" 2>/dev/null || true
   echo "аудио пользователя скопировано в render/voices/"
 fi
