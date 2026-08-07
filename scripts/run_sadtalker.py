@@ -33,7 +33,6 @@ def main(audio, out):
            "'--checkpoint_dir','checkpoints',"
            f"'--result_dir','{res_dir}',"
            "'--preprocess','full',"
-           "'--enhancer','none',"
            "'--cpu',"
            "'--batch_size','1'];"
            "runpy.run_path('inference.py',run_name='__main__')"]

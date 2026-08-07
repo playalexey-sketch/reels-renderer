@@ -1,8 +1,21 @@
 """Патч SadTalker: убираем RetinaFace-детектор (нужен вес detection_Resnet50_Final.pth,
 недоступный из песочницы). Лицо на нашем аватаре известно и фронтальное —
 возвращаем захардкоженные 68 landmarks в масштабе кадра."""
+import os
 import sys
 import numpy as np
+import torch
+
+# только для CPU-машины и только один раз за процесс (защита от рекурсии)
+if os.environ.get("RR_TL") != "1" and not torch.cuda.is_available():
+    os.environ["RR_TL"] = "1"
+    _tl0 = torch.load
+
+    def _tlcpu(*a, **k):
+        k.setdefault("map_location", "cpu")
+        return _tl0(*a, **k)
+
+    torch.load = _tlcpu
 
 sys.path.insert(0, ".")
 import src.utils.croper as _cr
