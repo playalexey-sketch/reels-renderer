@@ -7,3 +7,5 @@ states.npy
 plan.npz
 montage.png
 mouth_closeup.png
+__pycache__/
+local-viseme-v2.mp4
