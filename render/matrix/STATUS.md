@@ -9,5 +9,8 @@
 | wav2lip-onnx-hq | Wav2Lip ONNX + GFPGAN (instant-high/guzmanvitar) | SKIP | нет ONNX-весов (LFS заблокирован) |
 
 | wav2lip-gfpgan-organic | Wav2Lip + GFPGAN (зона рта) + моргания/живая голова + unsharp | DONE | рабочая версия working-v2 |
+<<<<<<< HEAD
 
 | sadtalker-gfpgan | SadTalker (нейродвижение головы/мимика) + GFPGAN-резкость | DONE | рабочая версия working-v3 |
+=======
+>>>>>>> a23d265 (feat: Windows-пакет run.bat (exe-эквивалент) + Colab ячейка макс. качества (Wav2Lip+GFPGAN+50fps))

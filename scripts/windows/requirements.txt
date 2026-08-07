@@ -1,0 +1,16 @@
+torch>=2.5.1
+torchvision>=0.20.1
+numpy<2
+opencv-python
+librosa==0.10.2
+safetensors
+yacs
+kornia==0.7.3
+gfpgan
+facexlib
+basicsr
+pydub
+scipy
+soundfile
+tqdm
+imageio-ffmpeg
