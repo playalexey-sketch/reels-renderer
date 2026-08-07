@@ -15,6 +15,8 @@ import organic_enhance as oe
 
 
 def main(audio, out):
+    audio = os.path.abspath(audio)
+    out = os.path.abspath(out)
     st = os.path.join(TP, "SadTalker")
     env = dict(os.environ,
                TORCH_HOME=os.path.join(TP, "torchhome"),
