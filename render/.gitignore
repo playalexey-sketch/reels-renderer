@@ -1,0 +1,5 @@
+# генеративные артефакты — вне git (воспроизводятся make_video.py / LTX-2)
+frames/
+check_*.png
+voice.wav
+*.mp4
