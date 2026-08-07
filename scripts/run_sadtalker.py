@@ -37,7 +37,7 @@ def main(audio, out):
            "'--batch_size','1'];"
            "runpy.run_path('inference.py',run_name='__main__')"]
     subprocess.run(cmd, check=True, cwd=st, env=env)
-    vids = sorted(glob.glob(res_dir + "/*/*.mp4"))
+    vids = sorted(glob.glob(res_dir + "/**/*.mp4", recursive=True))
     assert vids, "SadTalker не выдал видео"
     raw = vids[-1]
 
