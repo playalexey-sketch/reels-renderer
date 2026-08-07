@@ -50,3 +50,19 @@ python3 scripts/xtts_client.py health   # проверка доступност�
   ```
   Песочница соберёт файл, проверит sha256
   `b78b681b…63c37` и прогонит матрицу (Wav2Lip PyTorch).
+
+## Подъём в новом чате / на новой машине (архив)
+Последняя проверенная рабочая версия помечена тегом `working-v1`
+(архив: Releases → source.zip, или `codeload .../archive/refs/tags/working-v1.zip`).
+```bash
+git clone https://github.com/playalexey-sketch/reels-renderer.git && cd reels-renderer
+git checkout working-v1
+pip install --user --break-system-packages torch torchvision "numpy==1.26.4" "librosa==0.10.2" \
+    scipy opencv-python-headless tqdm soundfile imageio-ffmpeg onnxruntime
+bash scripts/fetch_rhubarb.sh     # Rhubarb (фонемный синк) из npm
+bash scripts/fetch_weights.sh     # s3fd + wav2lip.pth (+GFPGAN, если есть чанки) из wav2lip-weights
+python3 scripts/run_lipsync_matrix.py   # нейросетевой Wav2Lip + локальный v4 → render/matrix/
+python3 scripts/enhance_gfpgan.py       # резкость рта/лица (если GFPGAN собран)
+```
+Результат: `render/talking_avatar_5s.mp4`. Ассеты (аватар, RU-реплика) уже в репо;
+веса — из вашего публичного `wav2lip-weights` (чанки), голос для XTTS — `render/voices/`.
