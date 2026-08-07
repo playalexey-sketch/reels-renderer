@@ -99,4 +99,4 @@ def _POS(xp, x):
 
 
 _pp.POS = _POS
-print("st_patch: detector bypassed (hardcoded 68 lm)")
+print("st_patch: детектор обойдён (68 точек заданы), POS-скаляры исправлены")

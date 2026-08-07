@@ -66,7 +66,7 @@ def main(audio, out):
            "-level", "4.0", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "slow",
            "-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", "-shortest", out]
     subprocess.run(cmd, check=True, capture_output=True)
-    print("sadtalker ->", out)
+    print("sadtalker готов ->", out)
 
 
 if __name__ == "__main__":

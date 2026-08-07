@@ -153,7 +153,7 @@ def main(src, dst, blink_img_path):
            "-level", "4.0", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "slow",
            "-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", "-shortest", dst]
     subprocess.run(cmd, check=True, capture_output=True)
-    print("organic+gfpgan ->", dst)
+    print("органик+gfpgan готов ->", dst)
 
 
 if __name__ == "__main__":
