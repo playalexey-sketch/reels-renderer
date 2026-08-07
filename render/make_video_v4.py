@@ -158,8 +158,8 @@ def render_frame(f, P, blink, L, m_mouth, m_eye):
 
 
 def main():
-    cues = rhubarb_timeline(os.path.join(HERE, "voice.wav"))
     decode_pcm(os.path.join(HERE, "voice.mp3"))
+    cues = rhubarb_timeline(os.path.join(HERE, "voice.wav"))
     total = int(DUR*FPS)
     P = targets_per_frame(cues, total)
     P[int(4.15*FPS):] *= 0.0

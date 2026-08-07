@@ -10,8 +10,8 @@ FF = subprocess.check_output([sys.executable, "-c",
     "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())"]).decode().strip()
 MATRIX = ROOT / "render" / "matrix"
 FACE = ROOT / "render" / "avatar_closed.jpg"
-AUDIO = ROOT / "render" / "voice_xtts.wav" if (ROOT / "render" / "voice_xtts.wav").exists() \
-    else ROOT / "render" / "voice.mp3"
+AUDIO = next(p for p in (ROOT / "render" / "voice5.wav", ROOT / "render" / "voice_xtts.wav",
+                         ROOT / "render" / "voice.mp3") if p.exists())
 
 
 def run_local_viseme():
