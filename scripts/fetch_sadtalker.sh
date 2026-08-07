@@ -28,6 +28,7 @@ assemble sadt256 checkpoints/SadTalker_V0.0.2_256.safetensors
 assemble bfmfit  checkpoints/BFM_Fitting.zip
 assemble resnet50 "$TP/torchhome/hub/checkpoints/resnet50-19c8e357.pth"
 assemble alignw gfpgan/weights/alignment_WFLW_4HG.pth
+assemble map09 checkpoints/mapping_00109-model.pth.tar
 if [ -f checkpoints/BFM_Fitting.zip ]; then
   (cd checkpoints && unzip -oq BFM_Fitting.zip)
 fi

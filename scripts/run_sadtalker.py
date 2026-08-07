@@ -22,8 +22,10 @@ def main(audio, out):
     res_dir = os.path.join(st, "results_reels")
     cmd = [sys.executable, "-c",
            "import torch,runpy,sys,numpy as np;"
+           "_tl=torch.load;"
+           "torch.load=lambda *a,**k:_tl(*((a[0],torch.device('cpu'))+a[2:]) if len(a)>1 else a,**{**k,'weights_only':False,'map_location':torch.device('cpu')});"
            "np.VisibleDeprecationWarning=getattr(np,'VisibleDeprecationWarning',None) or __import__('numpy').exceptions.VisibleDeprecationWarning;"
-           "_tl=torch.load;torch.load=lambda *a,**k:_tl(*a,**{**k,'weights_only':False});"
+           f"sys.path.insert(0,'{HERE}');import st_patch;"
            "sys.argv=['inference.py',"
            f"'--driven_audio','{audio}',"
            f"'--source_image','{ROOT}/render/avatar_closed.jpg',"

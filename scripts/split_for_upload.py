@@ -5,6 +5,7 @@ JOBS = [
     ("BFM_Fitting.zip", "bfmfit"),
     ("resnet50-19c8e357.pth", "resnet50"),
     ("alignment_WFLW_4HG.pth", "alignw"),
+    ("mapping_00109-model.pth.tar", "map09"),
 ]
 for f, p in JOBS:
     path = pathlib.Path(f)
