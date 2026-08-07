@@ -37,11 +37,7 @@ def main(audio, out):
            "'--batch_size','1'];"
            "runpy.run_path('inference.py',run_name='__main__')"]
     subprocess.run(cmd, check=True, cwd=st, env=env)
-<<<<<<< HEAD
     vids = sorted(glob.glob(res_dir + "/**/*.mp4", recursive=True))
-=======
-    vids = sorted(glob.glob(res_dir + "/*/*.mp4"))
->>>>>>> a23d265 (feat: Windows-пакет run.bat (exe-эквивалент) + Colab ячейка макс. качества (Wav2Lip+GFPGAN+50fps))
     assert vids, "SadTalker не выдал видео"
     raw = vids[-1]
 
