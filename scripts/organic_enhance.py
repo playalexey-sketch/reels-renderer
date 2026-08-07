@@ -37,8 +37,11 @@ def enhance_frame(model, img, feather):
         out = model(t)[0]
     enh = out[0].numpy().transpose(1, 2, 0)
     enh = np.clip((enh*0.5 + 0.5)*255, 0, 255).astype(np.uint8)
+    # перенос мелких деталей (кожа/поры) с оригинала, чтобы не было «пластика»
+    detail = small.astype(np.float32) - cv2.GaussianBlur(small, (0, 0), 2.0).astype(np.float32)
+    enh = np.clip(enh.astype(np.float32) + detail*0.6, 0, 255).astype(np.uint8)
     enh = cv2.resize(enh, (FS, FS), interpolation=cv2.INTER_LINEAR)
-    blended = (crop.astype(np.float32)*0.25 + enh.astype(np.float32)*0.75)
+    blended = enh.astype(np.float32)
     img2 = img.copy()
     img2[FY0:FY0+FS, FX0:FX0+FS] = (img2[FY0:FY0+FS, FX0:FX0+FS].astype(np.float32)*(1-feather)
                                     + blended*feather).astype(np.uint8)
@@ -55,9 +58,17 @@ def eye_feather():
 
 
 def face_feather():
+    """Маска в координатах кропа FSxFS: GFPGAN только на рту/нижней трети лица,
+    остальное лицо остаётся исходным (резким)."""
     yy, xx = np.mgrid[0:FS, 0:FS].astype(np.float32)
-    d = np.sqrt(((yy-FS/2)/(FS/2))**2 + ((xx-FS/2)/(FS/2))**2)
-    return np.clip((1.05-d)/0.30, 0, 1)[..., None]
+    # рот в координатах кропа: центр (366, 494), радиусы
+    cy, cx = 620 - FY0, 400 - FX0
+    d = np.sqrt(((yy-cy)/150.0)**2 + ((xx-cx)/170.0)**2)
+    mouth = np.clip((1.15-d)/0.35, 0, 1)
+    # лёгкая общая доводка нижней половины лица
+    d2 = np.sqrt(((yy-(680-FY0))/260.0)**2 + ((xx-cx)/240.0)**2)
+    low = 0.3*np.clip((1.1-d2)/0.4, 0, 1)
+    return np.clip(np.maximum(mouth, low), 0, 1)[..., None]
 
 
 def head_transform(t, env):
@@ -115,12 +126,15 @@ def main(src, dst, blink_img_path):
         M[0, 2] += tx
         M[1, 2] += ty
         img = cv2.warpAffine(img, M, (Ww, Hh), borderMode=cv2.BORDER_REPLICATE)
+        # финальный unsharp — хрусткость деталей
+        blur = cv2.GaussianBlur(img, (0, 0), 1.2)
+        img = cv2.addWeighted(img, 1.35, blur, -0.35, 0)
         cv2.imwrite(p, img)
 
     cmd = [FF, "-y", "-loglevel", "error", "-framerate", str(fps),
            "-i", os.path.join(vd, "f_%03d.png"), "-i", src,
            "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-profile:v", "main",
-           "-level", "4.0", "-pix_fmt", "yuv420p", "-crf", "20",
+           "-level", "4.0", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "slow",
            "-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", "-shortest", dst]
     subprocess.run(cmd, check=True, capture_output=True)
     print("organic+gfpgan ->", dst)
