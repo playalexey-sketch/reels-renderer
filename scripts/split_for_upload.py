@@ -4,6 +4,7 @@ JOBS = [
     ("SadTalker_V0.0.2_256.safetensors", "sadt256"),
     ("BFM_Fitting.zip", "bfmfit"),
     ("resnet50-19c8e357.pth", "resnet50"),
+    ("alignment_WFLW_4HG.pth", "alignw"),
 ]
 for f, p in JOBS:
     path = pathlib.Path(f)

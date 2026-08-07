@@ -21,15 +21,17 @@ def main(audio, out):
                PATH=os.path.expanduser("~/.local/bin") + os.pathsep + os.environ["PATH"])
     res_dir = os.path.join(st, "results_reels")
     cmd = [sys.executable, "-c",
-           "import torch,runpy,sys;"
+           "import torch,runpy,sys,numpy as np;"
+           "np.VisibleDeprecationWarning=getattr(np,'VisibleDeprecationWarning',None) or __import__('numpy').exceptions.VisibleDeprecationWarning;"
            "_tl=torch.load;torch.load=lambda *a,**k:_tl(*a,**{**k,'weights_only':False});"
            "sys.argv=['inference.py',"
            f"'--driven_audio','{audio}',"
            f"'--source_image','{ROOT}/render/avatar_closed.jpg',"
            "'--checkpoint_dir','checkpoints',"
            f"'--result_dir','{res_dir}',"
-           "'--preprocess_mode','full',"
+           "'--preprocess','full',"
            "'--enhancer','none',"
+           "'--cpu',"
            "'--batch_size','4'];"
            "runpy.run_path('inference.py',run_name='__main__')"]
     subprocess.run(cmd, check=True, cwd=st, env=env)
