@@ -36,7 +36,17 @@ python3 scripts/xtts_client.py health   # проверка доступност�
 
 ## Доставка весов в песочницу
 `bash scripts/fetch_weights.sh`:
-- s3fd и любые файлы <100 МБ — обычными blob через git;
-- wav2lip.pth (435 МБ) — чанками: на вашей машине
-  `split -b 90M wav2lip.pth wav2lip.pth.part_`, запушьте в любое ваше репо и
-  `WEIGHTS_REPO=<url> bash scripts/fetch_weights.sh` — песочница соберёт файл.
+- s3fd (89.8 МБ) — тянется сам (обычный blob в sahilg06/EmoGen);
+- wav2lip.pth (435 МБ) — чанками от пользователя (эгресс песочницы режет LFS/HF/Drive):
+  ```bash
+  # на вашей машине (сеть открыта): скачать wav2lip.pth с официального Drive
+  # (папка https://drive.google.com/drive/folders/153HLrqlBNxzZcHi17PEvP09kkAfzRshM),
+  # затем:
+  gh repo create wav2lip-weights --private   # или любой ваш репо
+  git clone https://github.com/<вы>/wav2lip-weights && cd wav2lip-weights
+  split -b 90M -d wav2lip.pth wav2lip.pth.part_
+  git add -A && git commit -m chunks && git push
+  # в чате написать «старт» (+ URL репо, если не playalexey-sketch/wav2lip-weights)
+  ```
+  Песочница соберёт файл, проверит sha256
+  `b78b681b…63c37` и прогонит матрицу (Wav2Lip PyTorch).
