@@ -1,5 +1,8 @@
-# промежуточные генеративные артефакты — вне git (воспроизводятся make_video.py / LTX-2)
-# готовые результаты (mp4, аватары, озвучка) — в git, чтобы давать ссылку на GitHub
+# промежуточные артефакты — вне git (воспроизводятся make_video_v2.py / verify_lipsync.py)
 frames/
+vframes/
 check_*.png
 voice.wav
+states.npy
+montage.png
+mouth_closeup.png
