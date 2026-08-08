@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-4)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-5)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -72,6 +72,7 @@ FY0, FY1, FX0, FX1 = 470, 690, 240, 520
 yy, xx = np.mgrid[0:1376, 0:768].astype(np.float32)
 d = np.sqrt(((yy-580)/130.0)**2 + ((xx-380)/150.0)**2)
 mask = np.clip((1.15-d)/0.35*0.5, 0, 1)[..., None]
+mask = mask[FY0:FY1, FX0:FX1]
 for p in sorted(glob.glob(vd+'/f_*.png')):
     img = cv2.resize(cv2.imread(p), (768,1376), interpolation=cv2.INTER_LANCZOS4)
     small = cv2.resize(img[FY0:FY1, FX0:FX1], (512,512))
