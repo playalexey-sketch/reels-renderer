@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-6, Kaggle+Colab)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-7)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -89,7 +89,7 @@ def _save(path, name):
     try:
         import google.colab.files as _g
         _g.download(path)
-    except Exception:
+    except BaseException:
         import shutil, os
         os.makedirs('/kaggle/working', exist_ok=True)
         shutil.copy(path, '/kaggle/working/'+name)
