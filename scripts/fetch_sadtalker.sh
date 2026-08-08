@@ -47,3 +47,5 @@ fi
 [ -f "$TP/GFPGANv1.4.pth" ] && cp -f "$TP/GFPGANv1.4.pth" gfpgan/weights/ || true
 mkdir -p "$TP/torchhome/hub/checkpoints"
 echo "SadTalker готов к запуску"
+# патч несовместимости numpy в SadTalker (переживает переклоны)
+sed -i 's/np\.array(\[float(item) for item in np\.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' "$TP/SadTalker/src/utils/preprocess.py" 2>/dev/null || true
