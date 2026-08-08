@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-9: batch2 для 512)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-10, макс. качество)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -53,11 +53,21 @@ import torchvision.transforms.functional as _F
 _m = types.ModuleType('torchvision.transforms.functional_tensor')
 _m.rgb_to_grayscale = _F.rgb_to_grayscale
 sys.modules.setdefault('torchvision.transforms.functional_tensor', _m)
+import os, gc
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+import torch as _t
+gc.collect()
+if _t.cuda.is_available(): _t.cuda.empty_cache()
 import runpy
 sys.argv = ['inference', '--driven_audio', 'examples/voice5.wav', '--source_image', 'examples/avatar.png',
             '--checkpoint_dir', 'checkpoints', '--result_dir', 'results', '--preprocess', 'full',
             '--batch_size', '2', '--size', '512']
-runpy.run_path('inference' + '.py', run_name='__main__')
+try:
+    runpy.run_path('inference' + '.py', run_name='__main__')
+except RuntimeError as _e:
+    if 'out of memory' in str(_e).lower():
+        print('OOM: нажмите Runtime -> Restart runtime, затем запустите ЭТУ ячейку ещё раз (GPU очистится, 512 влезет).')
+        raise
 print('РЕНДЕР ГОТОВ — запускайте ячейку 4')
 
 # ================= ШАГ 4 =================
@@ -67,7 +77,7 @@ raw = sorted(glob.glob('results/**/*.mp4', recursive=True))[-1]
 vd = '/content/fr'; os.makedirs(vd, exist_ok=True)
 for q in glob.glob(vd+'/*.png'): os.remove(q)
 !ffmpeg -y -loglevel error -i {raw} /content/fr/f_%04d.png
-restorer = GFPGANer(model_path='gfpgan/weights/GFPGANv1.4.pth', upscale=1, arch='clean', channel_multiplier=2)
+restorer = GFPGANer(model_path='gfpgan/weights/GFPGANv1.4.pth', upscale=2, arch='clean', channel_multiplier=2)
 orig = cv2.imread('examples/avatar.png')
 FY0, FY1, FX0, FX1 = 150, 980, 140, 630
 yy, xx = np.mgrid[0:1376, 0:768].astype(np.float32)
