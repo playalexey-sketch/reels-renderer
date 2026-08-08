@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final)
-# Colab: File -> Upload notebook -> выбрать этот файл -> Runtime T4 GPU -> запустить единственную ячейку.
-# Всё внутри: ассеты (base64), веса (официальные релизы), рендер, резкость, скачивание результата.
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-2)
+# Colab: File -> Upload notebook -> выбрать файл -> Runtime T4 GPU -> запустить.
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -14,6 +13,8 @@ os.makedirs('gfpgan/weights', exist_ok=True)
 !apt-get -qq install -y ffmpeg
 !pip install -q torch==2.5.1 torchvision==0.20.1 kornia==0.7.3 gfpgan facexlib basicsr librosa==0.10.2 safetensors yacs pydub
 !sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' /usr/local/lib/python3.12/dist-packages/basicsr/data/degradations.py
+!sed -i "s/trans_params = np.array(\[w0, h0, s, t\[0\], t\[1\]\])/t = np.asarray(t).reshape(-1); s = float(np.asarray(s).reshape(-1)[0]); trans_params = np.array([w0, h0, s, float(t[0]), float(t[1])])/" /content/ST_MAIN/src/face3d/util/preprocess.py
+!sed -i 's/np.array(\[float(item) for item in np.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' /content/ST_MAIN/src/face3d/util/preprocess.py
 D = [
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_256.safetensors','checkpoints/SadTalker_V0.0.2_256.safetensors'),
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/mapping_00109-model.pth.tar','checkpoints/mapping_00109-model.pth.tar'),
