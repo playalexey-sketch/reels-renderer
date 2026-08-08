@@ -3,10 +3,17 @@
 (V1 резкость, V2 +Wav2Lip-синхронизация рта, V3 +50fps), выбираю лучший по метрикам
 (синхронность/плавность/резкость), то же для RU-версии, коммичу превью и ОТЧЁТ в git."""
 import os, sys, glob, subprocess, time, shutil
-import numpy as np
-import cv2
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# самовосстановление среды после сброса песочницы (идемпотентно)
+try:
+    import numpy as _np, cv2 as _cv2  # noqa
+except Exception:
+    subprocess.run(["bash", os.path.join(ROOT, "scripts", "bootstrap_env.sh")], check=True)
+
+import numpy as np
+import cv2
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import organic_enhance as oe
 
