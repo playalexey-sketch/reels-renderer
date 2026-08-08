@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-8)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-9: batch2 для 512)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -56,7 +56,7 @@ sys.modules.setdefault('torchvision.transforms.functional_tensor', _m)
 import runpy
 sys.argv = ['inference', '--driven_audio', 'examples/voice5.wav', '--source_image', 'examples/avatar.png',
             '--checkpoint_dir', 'checkpoints', '--result_dir', 'results', '--preprocess', 'full',
-            '--batch_size', '8', '--size', '512']
+            '--batch_size', '2', '--size', '512']
 runpy.run_path('inference' + '.py', run_name='__main__')
 print('РЕНДЕР ГОТОВ — запускайте ячейку 4')
 
