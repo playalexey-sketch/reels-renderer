@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-11)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-12: + ячейка 6 v5-улучшений)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -122,3 +122,35 @@ if not os.path.isfile('w2l/checkpoints/wav2lip.pth'):
 !ffmpeg -y -loglevel error -i /content/sync.mp4 -vf "minterpolate=fps=50:mi_mode=mci:mc_mode=aobmc:vsbmc=1" -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k /content/result_50fps.mp4
 import google.colab.files as _gcf
 getattr(_gcf,'download')('/content/result_50fps.mp4')
+
+# ================= ШАГ 6 =================
+# Ячейка 6 (v5): аддитивные улучшения поверх готового v4 — НИЧЕГО не перерендерится
+import glob, os, cv2, numpy as np
+srcv = '/content/result_50fps.mp4'
+vd = '/content/fr5'; os.makedirs(vd, exist_ok=True)
+for q in glob.glob(vd+'/*.png'): os.remove(q)
+!ffmpeg -y -loglevel error -i {srcv} /content/fr5/f_%05d.png
+orig = cv2.imread('examples/avatar.png')
+fs = sorted(glob.glob(vd+'/f_*.png'))
+H, W = cv2.imread(fs[0]).shape[:2]
+ohf = cv2.resize(orig, (W, H)).astype(np.float32)
+hf = ohf - cv2.GaussianBlur(ohf, (0,0), 1.5).astype(np.float32)
+yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+d = np.sqrt(((yy-H*0.40)/(H*0.33))**2 + ((xx-W*0.5)/(W*0.34))**2)
+facemask = np.clip((1.1-d)/0.4, 0, 1)[..., None]
+my0,my1,mx0,mx1 = int(H*0.55), int(H*0.78), int(W*0.30), int(W*0.70)
+prev = None
+for p in fs:
+    img = cv2.imread(p).astype(np.float32)
+    if prev is not None:
+        img = img*0.85 + prev*0.15
+    img = img + hf*0.12*facemask
+    m = img[my0:my1, mx0:mx1]
+    b = cv2.GaussianBlur(m, (0,0), 0.8)
+    img[my0:my1, mx0:mx1] = cv2.addWeighted(m, 1.25, b, -0.25, 0)
+    prev = img
+    cv2.imwrite(p, np.clip(img,0,255).astype(np.uint8))
+!ffmpeg -y -loglevel error -framerate 50 -i /content/fr5/f_%05d.png -i {srcv} -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a copy /content/result_v5.mp4
+import shutil
+shutil.copy('/content/result_v5.mp4', '/kaggle/working/reels_v5_maxreal.mp4')
+print('ГОТОВО: reels_v5_maxreal.mp4 в панели Output')
