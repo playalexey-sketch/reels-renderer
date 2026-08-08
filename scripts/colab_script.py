@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-5)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-6, Kaggle+Colab)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -85,8 +85,16 @@ for p in sorted(glob.glob(vd+'/f_*.png')):
     b = cv2.GaussianBlur(img,(0,0),1.1); img = cv2.addWeighted(img,1.25,b,-0.25,0)
     cv2.imwrite(p,img)
 !ffmpeg -y -loglevel error -framerate 25 -i /content/fr/f_%04d.png -i examples/voice5.wav -map 0:v -map 1:a -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k -shortest /content/result.mp4
-import google.colab.files as _gcf
-getattr(_gcf,'download')('/content/result.mp4')
+def _save(path, name):
+    try:
+        import google.colab.files as _g
+        _g.download(path)
+    except Exception:
+        import shutil, os
+        os.makedirs('/kaggle/working', exist_ok=True)
+        shutil.copy(path, '/kaggle/working/'+name)
+        print('KAGGLE: сохранено в /kaggle/working/'+name+' — скачайте из панели Output')
+_save('/content/result.mp4', 'reels_v1_sharp.mp4')
 print('ГОТОВО: result.mp4 скачан')
 
 # ================= ШАГ 5 =================
