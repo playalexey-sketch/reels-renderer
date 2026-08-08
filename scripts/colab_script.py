@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-10, макс. качество)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-11)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -90,6 +90,7 @@ for p in sorted(glob.glob(vd+'/f_*.png')):
     _, _, enh = restorer.enhance(small, has_aligned=False, only_center_face=True, paste_back=True)
     src = cv2.resize(orig[FY0:FY1, FX0:FX1], (512,512))
     det = src.astype(np.float32) - cv2.GaussianBlur(src,(0,0),2.0).astype(np.float32)
+    enh = cv2.resize(enh, (512, 512))
     enh = np.clip(enh.astype(np.float32)+det*0.6,0,255).astype(np.uint8)
     enh = cv2.resize(enh,(FX1-FX0,FY1-FY0))
     img[FY0:FY1,FX0:FX1] = (img[FY0:FY1,FX0:FX1].astype(np.float32)*(1-mask)+enh*mask).astype(np.uint8)
