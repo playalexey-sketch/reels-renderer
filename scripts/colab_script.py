@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-7)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-8)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -17,6 +17,7 @@ os.makedirs('gfpgan/weights', exist_ok=True)
 !sed -i 's/np.array(\[float(item) for item in np.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' /content/ST_MAIN/src/face3d/util/preprocess.py
 D = [
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_256.safetensors','checkpoints/SadTalker_V0.0.2_256.safetensors'),
+ ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_512.safetensors','checkpoints/SadTalker_V0.0.2_512.safetensors'),
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/mapping_00109-model.pth.tar','checkpoints/mapping_00109-model.pth.tar'),
  ('https://github.com/Winfredy/SadTalker/releases/download/v0.0.2/wav2lip.pth','checkpoints/wav2lip.pth'),
  ('https://github.com/Winfredy/SadTalker/releases/download/v0.0.2/shape_predictor_68_face_landmarks.dat','checkpoints/shape_predictor_68_face_landmarks.dat'),
@@ -55,7 +56,7 @@ sys.modules.setdefault('torchvision.transforms.functional_tensor', _m)
 import runpy
 sys.argv = ['inference', '--driven_audio', 'examples/voice5.wav', '--source_image', 'examples/avatar.png',
             '--checkpoint_dir', 'checkpoints', '--result_dir', 'results', '--preprocess', 'full',
-            '--batch_size', '8', '--size', '256']
+            '--batch_size', '8', '--size', '512']
 runpy.run_path('inference' + '.py', run_name='__main__')
 print('РЕНДЕР ГОТОВ — запускайте ячейку 4')
 
@@ -68,9 +69,9 @@ for q in glob.glob(vd+'/*.png'): os.remove(q)
 !ffmpeg -y -loglevel error -i {raw} /content/fr/f_%04d.png
 restorer = GFPGANer(model_path='gfpgan/weights/GFPGANv1.4.pth', upscale=1, arch='clean', channel_multiplier=2)
 orig = cv2.imread('examples/avatar.png')
-FY0, FY1, FX0, FX1 = 470, 690, 240, 520
+FY0, FY1, FX0, FX1 = 150, 980, 140, 630
 yy, xx = np.mgrid[0:1376, 0:768].astype(np.float32)
-d = np.sqrt(((yy-580)/130.0)**2 + ((xx-380)/150.0)**2)
+d = np.sqrt(((yy-560)/440.0)**2 + ((xx-385)/255.0)**2)
 mask = np.clip((1.15-d)/0.35*0.5, 0, 1)[..., None]
 mask = mask[FY0:FY1, FX0:FX1]
 for p in sorted(glob.glob(vd+'/f_*.png')):
@@ -105,6 +106,7 @@ if not os.path.isdir('w2l'):
 os.makedirs('w2l/checkpoints', exist_ok=True)
 if not os.path.isfile('w2l/checkpoints/wav2lip.pth'):
     urllib.request.urlretrieve('https://github.com/Winfredy/SadTalker/releases/download/v0.0.2/wav2lip.pth','w2l/checkpoints/wav2lip.pth')
+!sed -i 's/librosa.filters.mel(hp.sample_rate, hp.n_fft,/librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft,/' w2l/audio.py
 !cd w2l && python inference.py --checkpoint_path checkpoints/wav2lip.pth --face /content/result.mp4 --audio ../examples/voice5.wav --outfile /content/sync.mp4 --pads 0 20 0 0
 !ffmpeg -y -loglevel error -i /content/sync.mp4 -vf "minterpolate=fps=50:mi_mode=mci:mc_mode=aobmc:vsbmc=1" -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k /content/result_50fps.mp4
 import google.colab.files as _gcf
