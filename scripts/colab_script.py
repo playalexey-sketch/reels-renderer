@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-2)
-# Colab: File -> Upload notebook -> выбрать файл -> Runtime T4 GPU -> запустить.
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-3)
+# Colab/Kaggle: Upload notebook -> GPU -> запустить ячейки 1-4.
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -55,7 +55,7 @@ sys.modules.setdefault('torchvision.transforms.functional_tensor', _m)
 import runpy
 sys.argv = ['inference', '--driven_audio', 'examples/voice5.wav', '--source_image', 'examples/avatar.png',
             '--checkpoint_dir', 'checkpoints', '--result_dir', 'results', '--preprocess', 'full',
-            '--enhancer', 'none', '--batch_size', '8', '--size', '256']
+            '--batch_size', '8', '--size', '256']
 runpy.run_path('inference' + '.py', run_name='__main__')
 print('РЕНДЕР ГОТОВ — запускайте ячейку 4')
 
