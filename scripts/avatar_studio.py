@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """AVATAR STUDIO — веб-сервис персонализации аватара (Colab/Kaggle/сервер).
-Вкладка 1: загрузка исходного видео Марии + автоподготовка датасета (стандарт ниже).
-Вкладка 2: дообучение Wav2Lip на её видео (персональные губы/зубы, T4 OK).
-Вкладка 3: генерация видео (база + аудио) персональной моделью + GFPGAN.
-Запуск: python avatar_studio.py  (в Colab — через bootstrap-ячейку)."""
-import os, glob, subprocess, shutil, math
+Вкладка 1: исходное видео (кешируется, грузится один раз) + автоподготовка датасета.
+Вкладка 2: дообучение Wav2Lip на видео Марии (персональные губы/зубы, T4 OK).
+Вкладка 3: генерация видео (база + аудио) персональной моделью.
+Прогресс операций выводится в интерфейс живыми строками."""
+import os, glob, subprocess, shutil
 import numpy as np
 import cv2
 import torch
@@ -16,12 +16,11 @@ W2L = os.path.join(BASE, 'Wav2Lip')
 FF = 'ffmpeg'
 
 STANDARD = """СТАНДАРТ ИСХОДНОГО ВИДЕО (как у HeyGen):
-1) 10–20 минут суммарно (минимум 3–5 для первой итерации).
-2) Лицо крупно, фронтально, смотрит в камеру, голова не закрывается руками/предметами.
-3) Ровный мягкий свет, без резких теней и пересветов; фон статичный.
-4) 25–30 fps, 720p/1080p, камера неподвижна, без склеек и зумов.
-5) Спокойная непрерывная речь, рот полностью виден; без музыки и второго голоса.
-6) Одна персона в кадре; без масок/очков с бликами."""
+1) 10–20 минут суммарно (для первой пробы достаточно 3–5).
+2) Лицо крупно, фронтально, смотрит в камеру, не закрывается руками.
+3) Ровный мягкий свет, фон статичный, камера неподвижна.
+4) 25–30 fps, 720p/1080p, без склеек и зумов.
+5) Спокойная непрерывная речь, рот виден; без музыки и второго голоса."""
 
 
 def sh(cmd, **kw):
@@ -36,37 +35,37 @@ def setup():
     os.makedirs(ck, exist_ok=True)
     if not os.path.isfile(os.path.join(ck, 'wav2lip.pth')):
         sh(f'wget -q https://github.com/Winfredy/SadTalker/releases/download/v0.0.2/wav2lip.pth -O {ck}/wav2lip.pth')
-    if not os.path.isfile(os.path.join(ck, 'syncnet.pth')):
-        sh(f'wget -q https://github.com/Winfredy/SadTalker/releases/download/v0.0.2/syncnet.pth -O {ck}/syncnet.pth || true')  # best-effort; без него — обучение rec-loss
     if not os.path.isfile(os.path.join(ck, 's3fd.pth')):
         sh(f'wget -q https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth -O {ck}/s3fd.pth')
-        shutil.copy(os.path.join(ck, 's3fd.pth'), os.path.join(W2L, 'face_detection/detection/sfd/s3fd.pth'))
+    shutil.copy(os.path.join(ck, 's3fd.pth'), os.path.join(W2L, 'face_detection/detection/sfd/s3fd.pth'))
     return 'База готова: Wav2Lip + веса скачаны.'
 
 
-def preprocess(video):
-    """Стандартная подготовка: 25fps, 16k, сегменты 8с, кропы лица 96.
-    Видео кешируется: загрузили один раз — дальше используется автоматически."""
+def preprocess(video, max_frames=6000):
+    """Кеш: видео сохраняется в STUDIO/src_maria.mp4 и переиспользуется.
+    Детекция лица — на GPU (если есть) и каждые 5 кадров (x5 быстрее).
+    Прогресс выводится живыми строками."""
     dst = os.path.join(BASE, 'src_maria.mp4')
     if video is not None:
-        shutil.copy(video if isinstance(video, str) else video.name, dst)
+        src = video if isinstance(video, str) else video.name
+        shutil.copy(src, dst)
     if not os.path.isfile(dst):
-        return 'Сначала загрузите видео Марии во вкладке 1.'
-    video = dst
+        yield 'Сначала загрузите видео Марии во вкладке 1.'
+        return
     ds = os.path.join(BASE, 'dataset')
     shutil.rmtree(ds, ignore_errors=True)
     os.makedirs(ds, exist_ok=True)
-    wav = os.path.join(BASE, 'src16k.wav')
-    sh(f'{FF} -y -loglevel error -i "{video}" -ar 16000 -ac 1 {wav}')
     segd = os.path.join(BASE, 'segs')
     shutil.rmtree(segd, ignore_errors=True)
     os.makedirs(segd)
-    sh(f'{FF} -y -loglevel error -i "{video}" -r 25 -c:v mjpeg -q:v 2 -f segment -segment_time 8 -reset_timestamps 1 {segd}/seg_%03d.avi')
+    yield 'Режу на сегменты по 8 сек…'
+    sh(f'{FF} -y -loglevel error -i "{dst}" -r 25 -c:v mjpeg -q:v 2 -f segment -segment_time 8 -reset_timestamps 1 {segd}/seg_%03d.avi')
     import sys
     sys.path.insert(0, W2L)
     from face_detection import FaceAlignment, LandmarksType
-    fa = FaceAlignment(LandmarksType._2D, flip_input=False, device='cuda' if torch.cuda.is_available() else 'cpu',
-                       model_path=os.path.join(W2L, 'checkpoints/s3fd.pth')) if os.path.isfile(os.path.join(W2L, 'checkpoints/s3fd.pth')) else None
+    dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+    fa = FaceAlignment(LandmarksType._2D, flip_input=False, device=dev)
+    total = 0
     report = []
     for seg in sorted(glob.glob(segd + '/seg_*.avi')):
         cap = cv2.VideoCapture(seg)
@@ -79,13 +78,18 @@ def preprocess(video):
         cap.release()
         if len(frames) < 25:
             continue
-        preds = fa.get_detections_for_batch(frames[0:1]) if fa else None
         sid = os.path.splitext(os.path.basename(seg))[0]
         fdir = os.path.join(ds, sid)
         os.makedirs(fdir, exist_ok=True)
+        last = None
         for i, fr in enumerate(frames):
-            if preds is not None and len(preds[0]):
-                x1, y1, x2, y2 = preds[0][0].astype(int)
+            if total >= int(max_frames):
+                break
+            if i % 5 == 0 or last is None:
+                preds = fa.get_detections_for_batch([fr])
+                last = preds[0][0].astype(int) if len(preds[0]) else None
+            if last is not None:
+                x1, y1, x2, y2 = last
                 pad = int((y2 - y1) * 0.25)
                 y1 = max(0, y1 - pad); y2 = min(fr.shape[0], y2 + int(pad * 1.6))
                 x1 = max(0, x1 - pad); x2 = min(fr.shape[1], x2 + pad)
@@ -94,9 +98,14 @@ def preprocess(video):
                 h, w = fr.shape[:2]
                 crop = cv2.resize(fr[int(h*0.1):int(h*0.7), int(w*0.25):int(w*0.75)], (96, 96))
             cv2.imwrite(os.path.join(fdir, f'{i:05d}.jpg'), crop)
+            total += 1
+            if i % 250 == 0:
+                yield f'{sid}: кадр {i}/{len(frames)} (всего {total})'
         sh(f'{FF} -y -loglevel error -i "{seg}" -ar 16000 -ac 1 {fdir}/audio.wav')
-        report.append(f'{sid}: {len(frames)} кадров')
-    return 'Датасет готов:\n' + '\n'.join(report[:20]) + f'\nВсего клипов: {len(report)}'
+        report.append(f'{sid}: {min(len(frames), int(max_frames))} кадров')
+        if total >= int(max_frames):
+            break
+    yield 'Датасет готов:\n' + '\n'.join(report) + f'\nВсего кадров: {total}. Переходите во вкладку 2.'
 
 
 class ClipDS(Dataset):
@@ -120,10 +129,7 @@ class ClipDS(Dataset):
         fs = sorted(glob.glob(c + '/*.jpg'))
         T = min(self.T, len(fs))
         i = np.random.randint(0, max(1, len(fs) - T))
-        frames = []
-        for j in range(i, i + T):
-            frames.append(cv2.imread(fs[j]) / 255.0)
-        frames = np.stack(frames).astype(np.float32)
+        frames = np.stack([cv2.imread(fs[j]) / 255.0 for j in range(i, i + T)]).astype(np.float32)
         m = self.mels[c][:, i * 4: i * 4 + T * 4]
         if m.shape[1] < T * 4:
             m = np.pad(m, ((0, 0), (0, T * 4 - m.shape[1])))
@@ -136,14 +142,13 @@ def train(epochs, lr):
     from models import Wav2Lip, SyncNet
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = Wav2Lip().to(dev)
-    ck = os.path.join(W2L, 'checkpoints/wav2lip.pth')
-    model.load_state_dict(torch.load(ck, map_location=dev, weights_only=False).get('state_dict',
-                 torch.load(ck, map_location=dev, weights_only=False)))
+    ckpt = torch.load(os.path.join(W2L, 'checkpoints/wav2lip.pth'), map_location=dev, weights_only=False)
+    model.load_state_dict(ckpt.get('state_dict', ckpt))
     expert = SyncNet().to(dev)
     sp = os.path.join(W2L, 'checkpoints/syncnet.pth')
     if os.path.isfile(sp):
-        expert.load_state_dict(torch.load(sp, map_location=dev, weights_only=False).get('state_dict',
-                     torch.load(sp, map_location=dev, weights_only=False)))
+        sc = torch.load(sp, map_location=dev, weights_only=False)
+        expert.load_state_dict(sc.get('state_dict', sc))
     expert.eval()
     ds = ClipDS(os.path.join(BASE, 'dataset'))
     dl = DataLoader(ds, batch_size=4, shuffle=True, num_workers=1)
@@ -154,25 +159,21 @@ def train(epochs, lr):
             frames, mels = frames.to(dev), mels.to(dev)
             g = model(mels, frames[:, :3])
             rec = nn.L1Loss()(g, frames)
-            B, T, C, H, W = frames.shape
             gf = g.reshape(-1, 3, 96, 96)
             rf = frames.reshape(-1, 3, 96, 96)
-            mm = mels.reshape(B * T, 1, 80, 16)
-            a = expert(torch.cat([gf, mm], 1))
-            b = expert(torch.cat([rf, mm], 1))
-            sync = nn.MSELoss()(a, b)
-            loss = rec + 0.3 * sync
+            mm = mels.reshape(mels.shape[0] * mels.shape[1], 1, 80, 16)
+            loss = rec + 0.3 * nn.MSELoss()(expert(torch.cat([gf, mm], 1)), expert(torch.cat([rf, mm], 1)))
             opt.zero_grad()
             loss.backward()
             opt.step()
-        log.append(f'epoch {e}: loss={loss.item():.4f}')
         torch.save({'state_dict': model.state_dict()}, os.path.join(BASE, 'personal_maria.pth'))
-    return '\n'.join(log) + '\nСохранено: personal_maria.pth'
+        log.append(f'epoch {e}: loss={loss.item():.4f}')
+        yield '\n'.join(log)
+    yield '\n'.join(log) + '\nСохранено: personal_maria.pth — переходите во вкладку 3.'
 
 
 def generate(base_video, audio):
     import sys
-    # кеш: что загрузили один раз — используется повторно
     cb, ca = os.path.join(BASE, 'base_last.mp4'), os.path.join(BASE, 'audio_last.wav')
     if base_video is not None:
         shutil.copy(base_video if isinstance(base_video, str) else base_video.name, cb)
@@ -187,8 +188,10 @@ def generate(base_video, audio):
         return 'Загрузите базовое видео и аудио во вкладке 3 (один раз).'
     sys.path.insert(0, W2L)
     out = os.path.join(BASE, 'personal_raw.mp4')
-    env = dict(os.environ, PYTHONPATH=W2L)
-    sh(f'cd {W2L} && python -c "import torch,runpy,sys;_tl=torch.load;torch.load=lambda *a,**k:_tl(*a,**{{**k,\\"weights_only\\":False}});sys.argv=[\\"i\\",\\"--checkpoint_path\\",\\"{BASE}/personal_maria.pth\\",\\"--face\\",\\"{base_video}\\",\\"--audio\\",\\"{audio}\\",\\"--outfile\\",\\"{out}\\",\\"--pads\\",\\"0\\",\\"20\\",\\"0\\",\\"0\\"];runpy.run_path(\\"inference.py\\",run_name=\\"__main__\")"', env=env)
+    ckpt = os.path.join(BASE, 'personal_maria.pth')
+    if not os.path.isfile(ckpt):
+        ckpt = os.path.join(W2L, 'checkpoints/wav2lip.pth')
+    sh(f'cd {W2L} && python -c "import torch,runpy,sys;_tl=torch.load;torch.load=lambda *a,**k:_tl(*a,**{{**k,\\"weights_only\\":False}});sys.argv=[\\"i\\",\\"--checkpoint_path\\",\\"{ckpt}\\",\\"--face\\",\\"{base_video}\\",\\"--audio\\",\\"{audio}\\",\\"--outfile\\",\\"{out}\\",\\"--pads\\",\\"0\\",\\"20\\",\\"0\\",\\"0\\"];runpy.run_path(\\"inference.py\\",run_name=\\"__main__\")"')
     fin = os.path.join(BASE, 'personal_final.mp4')
     sh(f'{FF} -y -loglevel error -i {out} -vf "format=yuv420p" -c:v libx264 -crf 18 -movflags +faststart -c:a aac -b:a 128k {fin}')
     return fin
@@ -203,10 +206,11 @@ with gr.Blocks(title='Avatar Studio') as demo:
         btn0 = gr.Button('Подготовить базу (клон+веса)')
         out0 = gr.Textbox()
         btn0.click(setup, outputs=out0)
-        vid = gr.Video(label='Видео Марии (по стандарту выше)')
+        vid = gr.Video(label='Видео Марии (загрузить ОДИН раз — дальше кеш)')
+        maxf = gr.Number(value=6000, label='Максимум кадров для первой итерации')
         btn1 = gr.Button('Подготовить датасет')
         out1 = gr.Textbox()
-        btn1.click(preprocess, inputs=vid, outputs=out1)
+        btn1.click(preprocess, inputs=[vid, maxf], outputs=out1)
     with gr.Tab('2. Обучение'):
         ep = gr.Number(value=2, label='Эпохи')
         lr = gr.Number(value=1e-5, label='Learning rate')
@@ -214,8 +218,8 @@ with gr.Blocks(title='Avatar Studio') as demo:
         out2 = gr.Textbox()
         btn2.click(train, inputs=[ep, lr], outputs=out2)
     with gr.Tab('3. Генерация'):
-        bv = gr.Video(label='Базовое видео (например, рендер SadTalker/LatentSync)')
-        au = gr.Audio(label='Аудио (голос Марии или любой текст TTS)')
+        bv = gr.Video(label='Базовое видео (кешируется)')
+        au = gr.Audio(label='Аудио (кешируется)')
         btn3 = gr.Button('Сгенерировать')
         out3 = gr.Video()
         btn3.click(generate, inputs=[bv, au], outputs=out3)
