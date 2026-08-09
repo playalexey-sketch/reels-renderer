@@ -53,11 +53,9 @@ def preprocess(video, max_frames=6000):
         yield 'Сначала загрузите видео Марии во вкладке 1.'
         return
     ds = os.path.join(BASE, 'dataset')
-    shutil.rmtree(ds, ignore_errors=True)
     os.makedirs(ds, exist_ok=True)
     segd = os.path.join(BASE, 'segs')
-    shutil.rmtree(segd, ignore_errors=True)
-    os.makedirs(segd)
+    os.makedirs(segd, exist_ok=True)
     if glob.glob(segd + '/seg_*.avi'):
         yield 'Сегменты уже нарезаны — пропускаю нарезку.'
     else:
