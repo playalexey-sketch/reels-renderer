@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ ПОЛНОГО ЦИКЛА (v final-16)
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ ПОЛНОГО ЦИКЛА (v final-18)
 
 # ================= ЭТАП 1 =================
+def _sh(cmd):
+    try:
+        get_ipython().system(cmd)
+    except NameError:
+        os.system(cmd)
 import os, urllib.request
 ST = '/content/ST_MAIN'
 if not os.path.isfile(os.path.join(ST, 'inference.py')):
-    !git clone -q https://github.com/OpenTalker/SadTalker.git /content/ST_MAIN
+    _sh('''git clone -q https://github.com/OpenTalker/SadTalker.git /content/ST_MAIN''')
 os.chdir(ST)
 os.makedirs('checkpoints', exist_ok=True)
 os.makedirs('gfpgan/weights', exist_ok=True)
-!apt-get -qq install -y ffmpeg
-!pip uninstall -q -y torchaudio 2>/dev/null
-!pip install -q torch==2.5.1 torchvision==0.20.1 kornia==0.7.3 gfpgan facexlib basicsr librosa==0.10.2 safetensors yacs pydub
+_sh('''apt-get -qq install -y ffmpeg''')
+_sh('''pip uninstall -q -y torchaudio 2>/dev/null''')
+_sh('''pip install -q torch==2.5.1 torchvision==0.20.1 kornia==0.7.3 gfpgan facexlib basicsr librosa==0.10.2 safetensors yacs pydub''')
 # совместимость pickle между версиями torch (модели НЕ меняем)
 import types as _ty, sys as _sys
 _m = _ty.ModuleType('torch.utils.serialization')
@@ -25,9 +30,9 @@ _sys.modules['torch.utils.serialization'] = _m
 for _f in ['gfpgan/weights/alignment_WFLW_4HG.pth','gfpgan/weights/detection_Resnet50_Final.pth','gfpgan/weights/parsing_parsenet.pth','gfpgan/weights/GFPGANv1.4.pth']:
     if os.path.isfile(_f) and os.path.getsize(_f) < 1000000:
         os.remove(_f)
-!sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' /usr/local/lib/python3.12/dist-packages/basicsr/data/degradations.py
-!sed -i "s/trans_params = np.array(\[w0, h0, s, t\[0\], t\[1\]\])/t = np.asarray(t).reshape(-1); s = float(np.asarray(s).reshape(-1)[0]); trans_params = np.array([w0, h0, s, float(t[0]), float(t[1])])/" /content/ST_MAIN/src/face3d/util/preprocess.py
-!sed -i 's/np.array(\[float(item) for item in np.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' /content/ST_MAIN/src/face3d/util/preprocess.py
+_sh('''sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' /usr/local/lib/python3.12/dist-packages/basicsr/data/degradations.py''')
+_sh('''sed -i "s/trans_params = np.array(\[w0, h0, s, t\[0\], t\[1\]\])/t = np.asarray(t).reshape(-1); s = float(np.asarray(s).reshape(-1)[0]); trans_params = np.array([w0, h0, s, float(t[0]), float(t[1])])/" /content/ST_MAIN/src/face3d/util/preprocess.py''')
+_sh('''sed -i 's/np.array(\[float(item) for item in np.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' /content/ST_MAIN/src/face3d/util/preprocess.py''')
 D = [
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_256.safetensors','checkpoints/SadTalker_V0.0.2_256.safetensors'),
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_512.safetensors','checkpoints/SadTalker_V0.0.2_512.safetensors'),
@@ -44,7 +49,7 @@ for u, f in D:
         print('качаю', f); urllib.request.urlretrieve(u, f)
 if not os.path.isdir('checkpoints/BFM_Fitting'):
     urllib.request.urlretrieve('https://github.com/Winfredy/SadTalker/releases/download/v0.0.2/BFM_Fitting.zip','checkpoints/BFM_Fitting.zip')
-    !cd checkpoints && unzip -oq BFM_Fitting.zip
+    _sh('''cd checkpoints && unzip -oq BFM_Fitting.zip''')
 print('ЯЧЕЙКА 1 ГОТОВА, cwd =', os.getcwd())
 
 # ================= ЭТАП 2 =================
@@ -89,7 +94,7 @@ from gfpgan import GFPGANer
 raw = sorted(glob.glob('results/**/*.mp4', recursive=True))[-1]
 vd = '/content/fr'; os.makedirs(vd, exist_ok=True)
 for q in glob.glob(vd+'/*.png'): os.remove(q)
-!ffmpeg -y -loglevel error -i {raw} /content/fr/f_%04d.png
+_sh(f'''ffmpeg -y -loglevel error -i {raw} /content/fr/f_%04d.png''')
 restorer = GFPGANer(model_path='gfpgan/weights/GFPGANv1.4.pth', upscale=2, arch='clean', channel_multiplier=2)
 orig = cv2.imread('examples/avatar.png')
 FY0, FY1, FX0, FX1 = 150, 980, 140, 630
@@ -109,7 +114,7 @@ for p in sorted(glob.glob(vd+'/f_*.png')):
     img[FY0:FY1,FX0:FX1] = (img[FY0:FY1,FX0:FX1].astype(np.float32)*(1-mask)+enh*mask).astype(np.uint8)
     b = cv2.GaussianBlur(img,(0,0),1.1); img = cv2.addWeighted(img,1.25,b,-0.25,0)
     cv2.imwrite(p,img)
-!ffmpeg -y -loglevel error -framerate 25 -i /content/fr/f_%04d.png -i examples/voice5.wav -map 0:v -map 1:a -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k -shortest /content/result.mp4
+_sh('''ffmpeg -y -loglevel error -framerate 25 -i /content/fr/f_%04d.png -i examples/voice5.wav -map 0:v -map 1:a -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k -shortest /content/result.mp4''')
 def _save(path, name):
     try:
         import google.colab.files as _g
@@ -126,13 +131,13 @@ print('ГОТОВО: result.mp4 скачан')
 # Ячейка 5 (опционально): Wav2Lip-синхронизация рта поверх + 50fps
 import glob, os, urllib.request
 if not os.path.isdir('w2l'):
-    !git clone -q https://github.com/Rudrabha/Wav2Lip.git w2l
+    _sh('''git clone -q https://github.com/Rudrabha/Wav2Lip.git w2l''')
 os.makedirs('w2l/checkpoints', exist_ok=True)
 if not os.path.isfile('w2l/checkpoints/wav2lip.pth'):
     urllib.request.urlretrieve('https://github.com/Winfredy/SadTalker/releases/download/v0.0.2/wav2lip.pth','w2l/checkpoints/wav2lip.pth')
-!sed -i 's/librosa.filters.mel(hp.sample_rate, hp.n_fft,/librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft,/' w2l/audio.py
-!cd w2l && python inference.py --checkpoint_path checkpoints/wav2lip.pth --face /content/result.mp4 --audio ../examples/voice5.wav --outfile /content/sync.mp4 --pads 0 20 0 0
-!ffmpeg -y -loglevel error -i /content/sync.mp4 -vf "minterpolate=fps=50:mi_mode=mci:mc_mode=aobmc:vsbmc=1" -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k /content/result_50fps.mp4
+_sh('''sed -i 's/librosa.filters.mel(hp.sample_rate, hp.n_fft,/librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft,/' w2l/audio.py''')
+_sh('''cd w2l && python inference.py --checkpoint_path checkpoints/wav2lip.pth --face /content/result.mp4 --audio ../examples/voice5.wav --outfile /content/sync.mp4 --pads 0 20 0 0''')
+_sh('''ffmpeg -y -loglevel error -i /content/sync.mp4 -vf "minterpolate=fps=50:mi_mode=mci:mc_mode=aobmc:vsbmc=1" -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k /content/result_50fps.mp4''')
 import google.colab.files as _gcf
 getattr(_gcf,'download')('/content/result_50fps.mp4')
 
@@ -142,7 +147,7 @@ import glob, os, cv2, numpy as np
 srcv = '/content/result_50fps.mp4'
 vd = '/content/fr5'; os.makedirs(vd, exist_ok=True)
 for q in glob.glob(vd+'/*.png'): os.remove(q)
-!ffmpeg -y -loglevel error -i {srcv} /content/fr5/f_%05d.png
+_sh(f'''ffmpeg -y -loglevel error -i {srcv} /content/fr5/f_%05d.png''')
 orig = cv2.imread('examples/avatar.png')
 fs = sorted(glob.glob(vd+'/f_*.png'))
 H, W = cv2.imread(fs[0]).shape[:2]
@@ -163,7 +168,7 @@ for p in fs:
     img[my0:my1, mx0:mx1] = np.clip(cv2.addWeighted(m, 1.25, b, -0.25, 0), 0, 255)
     prev = img
     cv2.imwrite(p, np.clip(img,0,255).astype(np.uint8))
-!ffmpeg -y -loglevel error -framerate 50 -i /content/fr5/f_%05d.png -i {srcv} -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a copy /content/result_v5.mp4
+_sh(f'''ffmpeg -y -loglevel error -framerate 50 -i /content/fr5/f_%05d.png -i {srcv} -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a copy /content/result_v5.mp4''')
 import shutil
 shutil.copy('/content/result_v5.mp4', '/kaggle/working/reels_v5_maxreal.mp4')
 print('ГОТОВО: reels_v5_maxreal.mp4 в панели Output')
