@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-23: + ячейка 8 v7-стабилизация)
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-24: + LatentSync v8)
 
 # ================= ЭТАП 1 =================
 def _sh(cmd):
@@ -4111,3 +4111,28 @@ except BaseException:
     os.makedirs('/kaggle/working', exist_ok=True)
     _s7.copy('/content/result_v7.mp4', '/kaggle/working/reels_v7_stable.mp4')
     print('сохранено в /kaggle/working/reels_v7_stable.mp4')
+
+# ================= ЭТАП 9 =================
+# Ячейка 9 (v8): LatentSync — НЕПРЕРЫВНАЯ диффузионная синхронизация (без масок, без перерисовки), чанки по 5 сек
+import os, glob
+_sh('git clone -q https://github.com/bytedance/LatentSync.git /content/LS')
+os.chdir('/content/LS')
+_sh('pip install -q -r requirements.txt huggingface_hub')
+_sh('huggingface-cli download ByteDance/LatentSync latentsync_unet.pt --local-dir checkpoints || huggingface-cli download ByteDance/LatentSync-1.6 latentsync_unet.pt --local-dir checkpoints')
+_sh('huggingface-cli download ByteDance/LatentSync tiny.pt --local-dir checkpoints || huggingface-cli download ByteDance/LatentSync-1.6 tiny.pt --local-dir checkpoints')
+base = sorted(glob.glob('results/**/*.mp4', recursive=True))[-1]
+audio = os.path.abspath('examples/voice5.wav') if os.path.isfile('examples/voice5.wav') else '/content/ST_MAIN/examples/voice5.wav'
+# чанки по 5 секунд
+os.makedirs('/content/ch', exist_ok=True)
+_sh(f'''ffmpeg -y -loglevel error -i {base} -c copy -f segment -segment_time 5 -reset_timestamps 1 /content/ch/seg_%02d.mp4''')
+_sh(f'''ffmpeg -y -loglevel error -i {audio} -f segment -segment_time 5 -reset_timestamps 1 -c:a pcm_s16le /content/ch/seg_%02d.wav''')
+segs = sorted(glob.glob('/content/ch/seg_*.mp4'))
+outs = []
+for i, s in enumerate(segs):
+    o = f'/content/ch/out_{i:02d}.mp4'
+    _sh(f'''python -m scripts.inference --unet_config_path configs/unet/stage2.yaml --inference_ckpt_path checkpoints/latentsync_unet.pt --inference_steps 20 --guidance_scale 1.5 --enable_deepcache --video_path {s} --audio_path /content/ch/seg_{i:02d}.wav --video_out_path {o}''')
+    outs.append(o)
+listf = '/content/ch/list.txt'
+open(listf,'w').write(''.join(f"file '{o}'\n" for o in outs))
+_sh(f'''ffmpeg -y -loglevel error -f concat -safe 0 -i {listf} -c copy /content/ls_sync.mp4''')
+print('LatentSync ГОТОВ: /content/ls_sync.mp4')
