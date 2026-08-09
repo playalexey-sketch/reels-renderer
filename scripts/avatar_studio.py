@@ -224,4 +224,4 @@ with gr.Blocks(title='Avatar Studio') as demo:
         out3 = gr.Video()
         btn3.click(generate, inputs=[bv, au], outputs=out3)
 
-demo.launch(share=True, server_name='0.0.0.0')
+demo.launch(share=True, server_name='0.0.0.0', show_api=False)
