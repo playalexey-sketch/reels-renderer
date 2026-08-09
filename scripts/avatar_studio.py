@@ -45,7 +45,14 @@ def setup():
 
 
 def preprocess(video):
-    """Стандартная подготовка: 25fps, 16k, сегменты 8с, кропы лица 96."""
+    """Стандартная подготовка: 25fps, 16k, сегменты 8с, кропы лица 96.
+    Видео кешируется: загрузили один раз — дальше используется автоматически."""
+    dst = os.path.join(BASE, 'src_maria.mp4')
+    if video is not None:
+        shutil.copy(video if isinstance(video, str) else video.name, dst)
+    if not os.path.isfile(dst):
+        return 'Сначала загрузите видео Марии во вкладке 1.'
+    video = dst
     ds = os.path.join(BASE, 'dataset')
     shutil.rmtree(ds, ignore_errors=True)
     os.makedirs(ds, exist_ok=True)
@@ -165,6 +172,19 @@ def train(epochs, lr):
 
 def generate(base_video, audio):
     import sys
+    # кеш: что загрузили один раз — используется повторно
+    cb, ca = os.path.join(BASE, 'base_last.mp4'), os.path.join(BASE, 'audio_last.wav')
+    if base_video is not None:
+        shutil.copy(base_video if isinstance(base_video, str) else base_video.name, cb)
+    if audio is not None:
+        src = audio if isinstance(audio, str) else audio.name
+        sh(f'{FF} -y -loglevel error -i "{src}" -ar 16000 -ac 1 {ca}')
+    if base_video is None and os.path.isfile(cb):
+        base_video = cb
+    if audio is None and os.path.isfile(ca):
+        audio = ca
+    if base_video is None or audio is None:
+        return 'Загрузите базовое видео и аудио во вкладке 3 (один раз).'
     sys.path.insert(0, W2L)
     out = os.path.join(BASE, 'personal_raw.mp4')
     env = dict(os.environ, PYTHONPATH=W2L)
