@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ ПОЛНОГО ЦИКЛА (v final-19)
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-20, без SyntaxWarning)
 
 # ================= ЭТАП 1 =================
 def _sh(cmd):
@@ -31,8 +31,8 @@ for _f in ['gfpgan/weights/alignment_WFLW_4HG.pth','gfpgan/weights/detection_Res
     if os.path.isfile(_f) and os.path.getsize(_f) < 1000000:
         os.remove(_f)
 _sh('''sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' /usr/local/lib/python3.12/dist-packages/basicsr/data/degradations.py''')
-_sh('''sed -i "s/trans_params = np.array(\[w0, h0, s, t\[0\], t\[1\]\])/t = np.asarray(t).reshape(-1); s = float(np.asarray(s).reshape(-1)[0]); trans_params = np.array([w0, h0, s, float(t[0]), float(t[1])])/" /content/ST_MAIN/src/face3d/util/preprocess.py''')
-_sh('''sed -i 's/np.array(\[float(item) for item in np.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' /content/ST_MAIN/src/face3d/util/preprocess.py''')
+_sh(r'''sed -i "s/trans_params = np.array(\[w0, h0, s, t\[0\], t\[1\]\])/t = np.asarray(t).reshape(-1); s = float(np.asarray(s).reshape(-1)[0]); trans_params = np.array([w0, h0, s, float(t[0]), float(t[1])])/" /content/ST_MAIN/src/face3d/util/preprocess.py''')
+_sh(r'''sed -i 's/np.array(\[float(item) for item in np.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' /content/ST_MAIN/src/face3d/util/preprocess.py''')
 D = [
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_256.safetensors','checkpoints/SadTalker_V0.0.2_256.safetensors'),
  ('https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_512.safetensors','checkpoints/SadTalker_V0.0.2_512.safetensors'),
