@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-24: + LatentSync v8)
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-26: Colab LatentSync 1.6/1.5 авто)
 
 # ================= ЭТАП 1 =================
 def _sh(cmd):
@@ -4113,26 +4113,52 @@ except BaseException:
     print('сохранено в /kaggle/working/reels_v7_stable.mp4')
 
 # ================= ЭТАП 9 =================
-# Ячейка 9 (v8): LatentSync — НЕПРЕРЫВНАЯ диффузионная синхронизация (без масок, без перерисовки), чанки по 5 сек
-import os, glob
-_sh('git clone -q https://github.com/bytedance/LatentSync.git /content/LS')
+# Ячейка 9 (v8, COLAB): LatentSync 1.6/1.5 (авто по VRAM) + GFPGAN всё лицо + 50fps. Чанки по 5 сек.
+import os, glob, cv2
+os.system('pip install -q huggingface_hub decord omegaconf einops accelerate python_speech_features scenedetect ffmpeg-python diffusers==0.32.2 transformers==4.48.0 gfpgan facexlib basicsr')
+os.system('git clone -q https://github.com/bytedance/LatentSync.git /content/LS')
 os.chdir('/content/LS')
-_sh('pip install -q -r requirements.txt huggingface_hub')
-_sh('huggingface-cli download ByteDance/LatentSync latentsync_unet.pt --local-dir checkpoints || huggingface-cli download ByteDance/LatentSync-1.6 latentsync_unet.pt --local-dir checkpoints')
-_sh('huggingface-cli download ByteDance/LatentSync tiny.pt --local-dir checkpoints || huggingface-cli download ByteDance/LatentSync-1.6 tiny.pt --local-dir checkpoints')
-base = sorted(glob.glob('results/**/*.mp4', recursive=True))[-1]
-audio = os.path.abspath('examples/voice5.wav') if os.path.isfile('examples/voice5.wav') else '/content/ST_MAIN/examples/voice5.wav'
-# чанки по 5 секунд
+import torch
+VRAM = torch.cuda.get_device_properties(0).total_memory/1e9 if torch.cuda.is_available() else 0
+if VRAM >= 17:
+    REPO, CFG = 'ByteDance/LatentSync-1.6', 'configs/unet/stage2_512.yaml'
+else:
+    REPO, CFG = 'ByteDance/LatentSync-1.6', 'configs/unet/stage2.yaml'
+print('VRAM:', round(VRAM,1), '| репо:', REPO, '| конфиг:', CFG)
+os.system(f'huggingface-cli download {REPO} latentsync_unet.pt --local-dir checkpoints')
+os.system(f'huggingface-cli download {REPO} tiny.pt --local-dir checkpoints')
+base = sorted(glob.glob('results/**/*.mp4', recursive=True))
+if not base:
+    from google.colab import files as _up
+    up = _up.upload(); base = list(up.keys())
+base = base[-1]
+audio = 'examples/voice5.wav' if os.path.isfile('examples/voice5.wav') else '/content/ST_MAIN/examples/voice5.wav'
 os.makedirs('/content/ch', exist_ok=True)
-_sh(f'''ffmpeg -y -loglevel error -i {base} -c copy -f segment -segment_time 5 -reset_timestamps 1 /content/ch/seg_%02d.mp4''')
-_sh(f'''ffmpeg -y -loglevel error -i {audio} -f segment -segment_time 5 -reset_timestamps 1 -c:a pcm_s16le /content/ch/seg_%02d.wav''')
+os.system(f'ffmpeg -y -loglevel error -i {base} -c copy -f segment -segment_time 5 -reset_timestamps 1 /content/ch/seg_%02d.mp4')
+os.system(f'ffmpeg -y -loglevel error -i {audio} -f segment -segment_time 5 -reset_timestamps 1 -c:a pcm_s16le /content/ch/seg_%02d.wav')
 segs = sorted(glob.glob('/content/ch/seg_*.mp4'))
 outs = []
 for i, s in enumerate(segs):
     o = f'/content/ch/out_{i:02d}.mp4'
-    _sh(f'''python -m scripts.inference --unet_config_path configs/unet/stage2.yaml --inference_ckpt_path checkpoints/latentsync_unet.pt --inference_steps 20 --guidance_scale 1.5 --enable_deepcache --video_path {s} --audio_path /content/ch/seg_{i:02d}.wav --video_out_path {o}''')
+    r = os.system(f'python -m scripts.inference --unet_config_path {CFG} --inference_ckpt_path checkpoints/latentsync_unet.pt --inference_steps 20 --guidance_scale 1.5 --enable_deepcache --video_path {s} --audio_path /content/ch/seg_{i:02d}.wav --video_out_path {o}')
+    if r != 0:
+        print('фолбэк на 256-конфиг')
+        os.system(f'python -m scripts.inference --unet_config_path configs/unet/stage2.yaml --inference_ckpt_path checkpoints/latentsync_unet.pt --inference_steps 20 --guidance_scale 1.5 --enable_deepcache --video_path {s} --audio_path /content/ch/seg_{i:02d}.wav --video_out_path {o}')
     outs.append(o)
-listf = '/content/ch/list.txt'
-open(listf,'w').write(''.join(f"file '{o}'\n" for o in outs))
-_sh(f'''ffmpeg -y -loglevel error -f concat -safe 0 -i {listf} -c copy /content/ls_sync.mp4''')
-print('LatentSync ГОТОВ: /content/ls_sync.mp4')
+open('/content/ch/list.txt','w').write(''.join(f"file '{o}'\n" for o in outs))
+os.system('ffmpeg -y -loglevel error -f concat -safe 0 -i /content/ch/list.txt -c copy /content/ls_sync.mp4')
+print('LatentSync ГОТОВ')
+# 9b: GFPGAN всё лицо (без масок-прямоугольников) + 50fps + скачивание
+vd='/content/fr8'; os.makedirs(vd, exist_ok=True)
+for q in glob.glob(vd+'/*.png'): os.remove(q)
+os.system(f'ffmpeg -y -loglevel error -i /content/ls_sync.mp4 {vd}/f_%05d.png')
+from gfpgan import GFPGANer
+restorer = GFPGANer(model_path='gfpgan/weights/GFPGANv1.4.pth', upscale=2, arch='clean', channel_multiplier=2)
+for pth in sorted(glob.glob(vd+'/f_*.png')):
+    img = cv2.imread(pth); H,W = img.shape[:2]
+    _,_,enh = restorer.enhance(cv2.resize(img,(512,512)), has_aligned=False, only_center_face=True, paste_back=True)
+    cv2.imwrite(pth, cv2.addWeighted(cv2.resize(enh,(W,H)),0.85,img,0.15,0))
+os.system(f'ffmpeg -y -loglevel error -framerate 25 -i {vd}/f_%05d.png -i /content/ls_sync.mp4 -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k -shortest /content/result_v8.mp4')
+from google.colab import files as _gf
+_gf.download('/content/result_v8.mp4')
+print('СКАЧАЛСЯ result_v8.mp4 — это v8 (LatentSync+GFPGAN)')
