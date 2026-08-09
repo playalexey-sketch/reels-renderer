@@ -169,7 +169,7 @@ def train(epochs, lr):
     import sys
     sys.path.insert(0, W2L)
     from models.wav2lip import Wav2Lip
-    from models.syncnet import SyncNet
+    from models.syncnet import SyncNet_color as SyncNet
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = Wav2Lip().to(dev)
     ckpt = torch.load(os.path.join(W2L, 'checkpoints/wav2lip.pth'), map_location=dev, weights_only=False)
