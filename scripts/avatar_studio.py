@@ -86,7 +86,7 @@ def preprocess(video, max_frames=6000):
             if total >= int(max_frames):
                 break
             if i % 5 == 0 or last is None:
-                preds = fa.get_detections_for_batch([fr])
+                preds = fa.get_detections_for_batch(np.array([fr]))
                 last = preds[0][0].astype(int) if len(preds[0]) else None
             if last is not None:
                 x1, y1, x2, y2 = last
