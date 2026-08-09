@@ -38,6 +38,11 @@ def setup():
     if not os.path.isfile(os.path.join(ck, 's3fd.pth')):
         sh(f'wget -q https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth -O {ck}/s3fd.pth')
     shutil.copy(os.path.join(ck, 's3fd.pth'), os.path.join(W2L, 'face_detection/detection/sfd/s3fd.pth'))
+    ap = os.path.join(W2L, 'audio.py')
+    src = open(ap, encoding='utf-8').read()
+    if 'librosa.filters.mel(hp.sample_rate' in src:
+        src = src.replace('librosa.filters.mel(hp.sample_rate, hp.n_fft,', 'librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft,')
+        open(ap, 'w', encoding='utf-8').write(src)
     return 'База готова: Wav2Lip + веса скачаны.'
 
 
@@ -133,31 +138,57 @@ def preprocess(video, max_frames=6000):
 
 
 class ClipDS(Dataset):
-    def __init__(self, ds, T=16):
+    def __init__(self, ds, T=5):
         self.T = T
         self.clips = [d for d in sorted(glob.glob(ds + '/*')) if os.path.isdir(d)]
         import sys
         sys.path.insert(0, W2L)
         import audio as A
+        if not getattr(A, '_mel_kw', False):
+            import librosa as _lb
+            def _mb():
+                return _lb.filters.mel(sr=A.hp.sample_rate, n_fft=A.hp.n_fft, n_mels=A.hp.num_mels, fmin=A.hp.fmin, fmax=A.hp.fmax)
+            A._build_mel_basis = _mb
+            A._mel_kw = True
         self.A = A
         self.mels = {}
+        self.files = {}
         for c in self.clips:
-            wav = self.A.load_wav(os.path.join(c, 'audio.wav'), 16000)
-            self.mels[c] = self.A.melspectrogram(wav)
+            wav = A.load_wav(os.path.join(c, 'audio.wav'), 16000)
+            self.mels[c] = A.melspectrogram(wav).T
+            self.files[c] = sorted(glob.glob(c + '/*.jpg'))
 
     def __len__(self):
-        return sum(max(1, len(glob.glob(c + '/*.jpg')) - self.T) for c in self.clips)
+        return sum(max(1, len(self.files[c]) - self.T - 2) for c in self.clips)
+
+    def _crop_win(self, spec, frame_id):
+        s0 = int(80.0 * (frame_id / 25.0))
+        return spec[s0:s0 + 16, :]
 
     def __getitem__(self, idx):
         c = self.clips[idx % len(self.clips)]
-        fs = sorted(glob.glob(c + '/*.jpg'))
-        T = min(self.T, len(fs))
-        i = np.random.randint(0, max(1, len(fs) - T))
-        frames = np.stack([cv2.imread(fs[j]) / 255.0 for j in range(i, i + T)]).astype(np.float32)
-        m = self.mels[c][:, i * 4: i * 4 + T * 4]
-        if m.shape[1] < T * 4:
-            m = np.pad(m, ((0, 0), (0, T * 4 - m.shape[1])))
-        return (torch.from_numpy(frames).permute(0, 3, 1, 2), torch.from_numpy(m))
+        fs = self.files[c]
+        T = self.T
+        hi = max(3, len(fs) - T)
+        i = int(np.random.randint(2, hi))
+        w = int(np.random.randint(2, hi))
+
+        def prep(ids):
+            x = np.asarray([cv2.imread(fs[j]) for j in ids]) / 255.0
+            x = np.transpose(x, (3, 0, 1, 2))
+            x[:, :, 48:, :] = 0.0
+            return x
+
+        xw = prep(range(i, i + T))
+        y = np.asarray([cv2.imread(fs[j]) for j in range(i, i + T)]) / 255.0
+        y = np.transpose(y, (3, 0, 1, 2))
+        xw2 = prep(range(w, w + T))
+        x = np.concatenate([xw, xw2], axis=0)
+        spec = self.mels[c]
+        mel = self._crop_win(spec, i)
+        indiv = np.asarray([self._crop_win(spec, j - 2).T for j in range(i + 1, i + 1 + T)])
+        return (torch.FloatTensor(x), torch.FloatTensor(indiv).unsqueeze(1),
+                torch.FloatTensor(mel.T).unsqueeze(0), torch.FloatTensor(y))
 
 
 def train(epochs, lr):
@@ -169,44 +200,38 @@ def train(epochs, lr):
     import sys
     sys.path.insert(0, W2L)
     from models.wav2lip import Wav2Lip
-    from models.syncnet import SyncNet_color as SyncNet
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = Wav2Lip().to(dev)
-    ckpt = torch.load(os.path.join(W2L, 'checkpoints/wav2lip.pth'), map_location=dev, weights_only=False)
-    model.load_state_dict(ckpt.get('state_dict', ckpt))
-    expert = SyncNet().to(dev)
-    sp = os.path.join(W2L, 'checkpoints/syncnet.pth')
-    if os.path.isfile(sp):
-        sc = torch.load(sp, map_location=dev, weights_only=False)
-        expert.load_state_dict(sc.get('state_dict', sc))
-    expert.eval()
+    ck = torch.load(os.path.join(W2L, 'checkpoints/wav2lip.pth'), map_location=dev, weights_only=False)
+    sd = ck.get('state_dict', ck)
+    if any(k.startswith('module.') for k in sd):
+        sd = {k[7:]: v for k, v in sd.items()}
+    model.load_state_dict(sd)
     ds = ClipDS(os.path.join(BASE, 'dataset'))
-    dl = DataLoader(ds, batch_size=4, shuffle=True, num_workers=1)
+    dl = DataLoader(ds, batch_size=4, shuffle=True, num_workers=0)
     opt = torch.optim.Adam(model.parameters(), lr=float(lr))
     log = []
     for e in range(int(epochs)):
         it = 0
-        for frames, mels in dl:
-            frames, mels = frames.to(dev), mels.to(dev)
-            g = model(mels, frames[:, :3])
-            rec = nn.L1Loss()(g, frames)
-            gf = g.reshape(-1, 3, 96, 96)
-            rf = frames.reshape(-1, 3, 96, 96)
-            mm = mels.reshape(mels.shape[0] * mels.shape[1], 1, 80, 16)
-            loss = rec + 0.3 * nn.MSELoss()(expert(torch.cat([gf, mm], 1)), expert(torch.cat([rf, mm], 1)))
+        for x_t, indiv_t, mel_t, y_t in dl:
+            x_t, indiv_t, y_t = x_t.to(dev), indiv_t.to(dev), y_t.to(dev)
+            g = model(indiv_t, x_t)
+            loss = nn.L1Loss()(g, y_t)
             opt.zero_grad()
             loss.backward()
             opt.step()
+            it += 1
+            if it % 100 == 0:
+                yield f'🟢 epoch {e}: итерация {it}, loss={loss.item():.4f}'
         torch.save({'state_dict': model.state_dict()}, os.path.join(BASE, 'personal_maria.pth'))
-        log.append(f'epoch {e}: loss={loss.item():.4f}')
-        yield '\n'.join(log)
-    yield '\n'.join(log) + '\nСохранено: personal_maria.pth — переходите во вкладку 3.'
+        yield f'🟢 epoch {e} завершён: loss={loss.item():.4f}'
+    open(os.path.join(BASE, '.done_train'), 'w').write('ok')
 
 
 def generate(base_video, audio):
     fin0 = os.path.join(BASE, 'personal_final.mp4')
-    ckpt = os.path.join(BASE, 'personal_maria.pth')
-    if os.path.isfile(fin0) and os.path.getmtime(fin0) >= os.path.getmtime(ckpt):
+    ckpt0 = os.path.join(BASE, 'personal_maria.pth')
+    if os.path.isfile(fin0) and os.path.isfile(ckpt0) and os.path.getmtime(fin0) >= os.path.getmtime(ckpt0):
         return f'🟢 Видео уже сгенерировано ранее: {fin0}'
     import sys
     cb, ca = os.path.join(BASE, 'base_last.mp4'), os.path.join(BASE, 'audio_last.wav')
@@ -225,52 +250,27 @@ def generate(base_video, audio):
     out = os.path.join(BASE, 'personal_raw.mp4')
     ckpt = os.path.join(BASE, 'personal_maria.pth')
     if not os.path.isfile(ckpt):
-        ckpt = os.path.join(W2L, 'checkpoints/wav2lip.pth')
-    sh(f'cd {W2L} && python -c "import torch,runpy,sys;_tl=torch.load;torch.load=lambda *a,**k:_tl(*a,**{{**k,\\"weights_only\\":False}});sys.argv=[\\"i\\",\\"--checkpoint_path\\",\\"{ckpt}\\",\\"--face\\",\\"{base_video}\\",\\"--audio\\",\\"{audio}\\",\\"--outfile\\",\\"{out}\\",\\"--pads\\",\\"0\\",\\"20\\",\\"0\\",\\"0\\"];runpy.run_path(\\"inference.py\\",run_name=\\"__main__\")"')
+        base = os.path.join(W2L, 'checkpoints/wav2lip.pth')
+        c = torch.load(base, map_location='cpu', weights_only=False)
+        sd = c.get('state_dict', c)
+        if any(k.startswith('module.') for k in sd):
+            torch.save({'state_dict': {k[7:]: v for k, v in sd.items()}}, base + '.clean.pth')
+            ckpt = base + '.clean.pth'
+        else:
+            ckpt = base
+    infer_py = os.path.join(BASE, 'w2l_infer.py')
+    open(infer_py, 'w').write(
+        "import torch, runpy, sys, os\n"
+        "sys.path.insert(0, os.getcwd())\n"
+        "ckpt, face, audio, out, bs = sys.argv[1:6]\n"
+        "_tl = torch.load\n"
+        "torch.load = lambda *a, **k: _tl(*a, **{**k, 'weights_only': False})\n"
+        "sys.argv = ['i', '--checkpoint_path', ckpt, '--face', face, '--audio', audio, '--outfile', out, '--pads', '0', '20', '0', '0', '--wav2lip_batch_size', bs]\n"
+        "runpy.run_path('inference.py', run_name='__main__')\n")
+    for bs in (16, 4, 1):
+        sh(f'cd {W2L} && OMP_NUM_THREADS=2 PATH=$HOME/.local/bin:$PATH python {infer_py} {ckpt} {base_video} {audio} {out} {bs}')
+        if os.path.isfile(out):
+            break
     fin = os.path.join(BASE, 'personal_final.mp4')
     sh(f'{FF} -y -loglevel error -i {out} -vf "format=yuv420p" -c:v libx264 -crf 18 -movflags +faststart -c:a aac -b:a 128k {fin}')
     return fin
-
-
-import gradio as gr
-
-# защита от бага gradio_client (bool в json-schema) — работает на любых версиях gradio
-try:
-    import gradio_client.utils as _gcu
-    _orig_j = _gcu.jsonschema_to_python_type
-    def _safe_j(schema, defs=None):
-        try:
-            return _orig_j(schema, defs)
-        except Exception:
-            return 'dict'
-    _gcu.jsonschema_to_python_type = _safe_j
-except Exception:
-    pass
-
-with gr.Blocks(title='Avatar Studio') as demo:
-    gr.Markdown('# AVATAR STUDIO — персональный аватар (стандарт HeyGen-класса)')
-    gr.Markdown(STANDARD)
-    with gr.Tab('1. Исходник'):
-        btn0 = gr.Button('Подготовить базу (клон+веса)')
-        out0 = gr.Textbox()
-        btn0.click(setup, outputs=out0)
-        vid = gr.Video(label='Видео Марии (загрузить ОДИН раз — дальше кеш)')
-        maxf = gr.Number(value=6000, label='Максимум кадров для первой итерации')
-        btn1 = gr.Button('Подготовить датасет')
-        out1 = gr.Textbox()
-        btn1.click(preprocess, inputs=[vid, maxf], outputs=out1)
-    with gr.Tab('2. Обучение'):
-        ep = gr.Number(value=2, label='Эпохи')
-        lr = gr.Number(value=1e-5, label='Learning rate')
-        btn2 = gr.Button('Дообучить аватар')
-        out2 = gr.Textbox()
-        btn2.click(train, inputs=[ep, lr], outputs=out2)
-    with gr.Tab('3. Генерация'):
-        bv = gr.Video(label='Базовое видео (кешируется)')
-        au = gr.Audio(label='Аудио (кешируется)')
-        btn3 = gr.Button('Сгенерировать')
-        out3 = gr.Video()
-        btn3.click(generate, inputs=[bv, au], outputs=out3)
-
-if os.environ.get('NO_GRADIO') != '1':
-    demo.launch(share=True, server_name='0.0.0.0', show_api=False)
