@@ -153,7 +153,8 @@ class ClipDS(Dataset):
 def train(epochs, lr):
     import sys
     sys.path.insert(0, W2L)
-    from models import Wav2Lip, SyncNet
+    from models.wav2lip import Wav2Lip
+    from models.syncnet import SyncNet
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = Wav2Lip().to(dev)
     ckpt = torch.load(os.path.join(W2L, 'checkpoints/wav2lip.pth'), map_location=dev, weights_only=False)
@@ -169,6 +170,7 @@ def train(epochs, lr):
     opt = torch.optim.Adam(model.parameters(), lr=float(lr))
     log = []
     for e in range(int(epochs)):
+        it = 0
         for frames, mels in dl:
             frames, mels = frames.to(dev), mels.to(dev)
             g = model(mels, frames[:, :3])
