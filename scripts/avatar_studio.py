@@ -58,8 +58,11 @@ def preprocess(video, max_frames=6000):
     segd = os.path.join(BASE, 'segs')
     shutil.rmtree(segd, ignore_errors=True)
     os.makedirs(segd)
-    yield 'Режу на сегменты по 8 сек…'
-    sh(f'{FF} -y -loglevel error -i "{dst}" -r 25 -c:v mjpeg -q:v 2 -f segment -segment_time 8 -reset_timestamps 1 {segd}/seg_%03d.avi')
+    if glob.glob(segd + '/seg_*.avi'):
+        yield 'Сегменты уже нарезаны — пропускаю нарезку.'
+    else:
+        yield 'Режу на сегменты по 8 сек…'
+        sh(f'{FF} -y -loglevel error -i "{dst}" -r 25 -c:v mjpeg -q:v 2 -f segment -segment_time 8 -reset_timestamps 1 {segd}/seg_%03d.avi')
     import sys
     sys.path.insert(0, W2L)
     from face_detection import FaceAlignment, LandmarksType
@@ -87,7 +90,14 @@ def preprocess(video, max_frames=6000):
                 break
             if i % 5 == 0 or last is None:
                 preds = fa.get_detections_for_batch(np.array([fr]))
-                last = preds[0][0].astype(int) if len(preds[0]) else None
+                det = preds[0] if len(preds) else None
+                if det is None or len(det) == 0:
+                    last = None
+                else:
+                    det = np.asarray(det)
+                    if det.ndim == 1:
+                        det = det[None, :]
+                    last = det[0][:4].astype(int)
             if last is not None:
                 x1, y1, x2, y2 = last
                 pad = int((y2 - y1) * 0.25)
