@@ -85,9 +85,19 @@ def preprocess(video, max_frames=6000):
         if len(frames) < 25:
             continue
         sid = os.path.splitext(os.path.basename(seg))[0]
-        yield f'🟢 Обрабатываю сегмент {sid}…'
         fdir = os.path.join(ds, sid)
         os.makedirs(fdir, exist_ok=True)
+        have = len(glob.glob(fdir + '/*.jpg'))
+        if have >= len(frames):
+            yield f'🟢 Сегмент {sid} уже обработан ({have} кадров) — пропускаю.'
+            if not os.path.isfile(os.path.join(fdir, 'audio.wav')):
+                sh(f'{FF} -y -loglevel error -i "{seg}" -ar 16000 -ac 1 {fdir}/audio.wav')
+            report.append(f'{sid}: {len(frames)} кадров (готово ранее)')
+            total += len(frames)
+            if total >= int(max_frames):
+                break
+            continue
+        yield f'🟢 Обрабатываю сегмент {sid}…'
         last = None
         for i, fr in enumerate(frames):
             if total >= int(max_frames):
@@ -151,6 +161,11 @@ class ClipDS(Dataset):
 
 
 def train(epochs, lr):
+    flag = os.path.join(BASE, '.done_train')
+    ckpt = os.path.join(BASE, 'personal_maria.pth')
+    if os.path.isfile(flag) and os.path.isfile(ckpt):
+        yield '🟢 Модель уже обучена — пропускаю обучение.'
+        return
     import sys
     sys.path.insert(0, W2L)
     from models.wav2lip import Wav2Lip
@@ -189,6 +204,10 @@ def train(epochs, lr):
 
 
 def generate(base_video, audio):
+    fin0 = os.path.join(BASE, 'personal_final.mp4')
+    ckpt = os.path.join(BASE, 'personal_maria.pth')
+    if os.path.isfile(fin0) and os.path.getmtime(fin0) >= os.path.getmtime(ckpt):
+        return f'🟢 Видео уже сгенерировано ранее: {fin0}'
     import sys
     cb, ca = os.path.join(BASE, 'base_last.mp4'), os.path.join(BASE, 'audio_last.wav')
     if base_video is not None:
