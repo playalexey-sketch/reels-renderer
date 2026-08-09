@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-20, без SyntaxWarning)
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-21)
 
 # ================= ЭТАП 1 =================
 def _sh(cmd):
@@ -4015,6 +4015,14 @@ for p in fs:
     prev = img
     cv2.imwrite(p, np.clip(img,0,255).astype(np.uint8))
 _sh(f'''ffmpeg -y -loglevel error -framerate 50 -i /content/fr5/f_%05d.png -i {srcv} -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a copy /content/result_v5.mp4''')
-import shutil
+try:
+    import google.colab.files as _g5
+    _g5.download('/content/result_v5.mp4')
+    print('ФАЙЛ СКАЧАЛСЯ НА КОМПЬЮТЕР: result_v5.mp4')
+except BaseException:
+    import os as _o5, shutil as _s5
+    _o5.makedirs('/kaggle/working', exist_ok=True)
+    _s5.copy('/content/result_v5.mp4', '/kaggle/working/reels_v5_maxreal.mp4')
+    print('сохранено в /kaggle/working/reels_v5_maxreal.mp4')
 shutil.copy('/content/result_v5.mp4', '/kaggle/working/reels_v5_maxreal.mp4')
 print('ГОТОВО: reels_v5_maxreal.mp4 в панели Output')
