@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-21)
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-22: + ячейка 7 v6-резкость губ)
 
 # ================= ЭТАП 1 =================
 def _sh(cmd):
@@ -4026,3 +4026,46 @@ except BaseException:
     print('сохранено в /kaggle/working/reels_v5_maxreal.mp4')
 shutil.copy('/content/result_v5.mp4', '/kaggle/working/reels_v5_maxreal.mp4')
 print('ГОТОВО: reels_v5_maxreal.mp4 в панели Output')
+
+# ================= ЭТАП 7 =================
+# Ячейка 7 (v6): МАКСИМАЛЬНАЯ резкость губ — CLAHE de-fog + unsharp + натуральный цвет
+import glob, os, cv2, numpy as np
+srcv = '/content/result_50fps.mp4'
+vd = '/content/fr6'; os.makedirs(vd, exist_ok=True)
+for q in glob.glob(vd+'/*.png'): os.remove(q)
+_sh(f'''ffmpeg -y -loglevel error -i {srcv} /content/fr6/f_%05d.png''')
+fs = sorted(glob.glob(vd+'/f_*.png'))
+H, W = cv2.imread(fs[0]).shape[:2]
+my0,my1,mx0,mx1 = int(H*0.36), int(H*0.52), int(W*0.28), int(W*0.72)
+yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+d = np.sqrt(((yy-H*0.40)/(H*0.34))**2 + ((xx-W*0.5)/(W*0.35))**2)
+fm = np.clip((1.1-d)/0.4, 0, 1)[..., None]
+prev = None
+for p in fs:
+    img = cv2.imread(p).astype(np.float32)
+    if prev is not None:
+        img = img*0.9 + prev*0.1
+    orig_m = img[my0:my1, mx0:mx1].copy()
+    lab = cv2.cvtColor(img[my0:my1, mx0:mx1].astype(np.uint8), cv2.COLOR_BGR2LAB)
+    clahe = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8,8))
+    lab[...,0] = clahe.apply(lab[...,0])
+    mouth = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR).astype(np.float32)
+    b = cv2.GaussianBlur(mouth, (0,0), 1.0)
+    mouth = np.clip(cv2.addWeighted(mouth, 1.35, b, -0.35, 0), 0, 255)
+    mouth = 0.75*mouth + 0.25*orig_m
+    img[my0:my1, mx0:mx1] = mouth
+    fb = cv2.GaussianBlur(img, (0,0), 1.2)
+    face_sh = np.clip(cv2.addWeighted(img, 1.12, fb, -0.12, 0), 0, 255)
+    img = img*(1-fm) + face_sh*fm
+    prev = img
+    cv2.imwrite(p, np.clip(img,0,255).astype(np.uint8))
+_sh(f'''ffmpeg -y -loglevel error -framerate 50 -i /content/fr6/f_%05d.png -i {srcv} -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a copy /content/result_v6.mp4''')
+try:
+    import google.colab.files as _g6
+    _g6.download('/content/result_v6.mp4')
+    print('ФАЙЛ СКАЧАЛСЯ: result_v6.mp4 (reels_v6_ultra)')
+except BaseException:
+    import shutil as _s6
+    os.makedirs('/kaggle/working', exist_ok=True)
+    _s6.copy('/content/result_v6.mp4', '/kaggle/working/reels_v6_ultra.mp4')
+    print('сохранено в /kaggle/working/reels_v6_ultra.mp4')
