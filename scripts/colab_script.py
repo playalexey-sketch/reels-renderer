@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-12: + ячейка 6 v5-улучшений)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-13: текстура 0.20)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -144,7 +144,7 @@ for p in fs:
     img = cv2.imread(p).astype(np.float32)
     if prev is not None:
         img = img*0.85 + prev*0.15
-    img = img + hf*0.12*facemask
+    img = img + hf*0.20*facemask
     m = img[my0:my1, mx0:mx1]
     b = cv2.GaussianBlur(m, (0,0), 0.8)
     img[my0:my1, mx0:mx1] = cv2.addWeighted(m, 1.25, b, -0.25, 0)
