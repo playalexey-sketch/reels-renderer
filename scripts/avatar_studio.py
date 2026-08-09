@@ -61,6 +61,11 @@ def preprocess(video, max_frames=6000):
     else:
         yield 'Режу на сегменты по 8 сек…'
         sh(f'{FF} -y -loglevel error -i "{dst}" -r 25 -c:v mjpeg -q:v 2 -f segment -segment_time 8 -reset_timestamps 1 {segd}/seg_%03d.avi')
+    existing = sum(len(glob.glob(d + '/*.jpg')) for d in glob.glob(ds + '/*') if os.path.isdir(d))
+    if existing >= int(max_frames):
+        yield f'🟢 Датасет уже собран ({existing} кадров) — сразу к обучению.'
+        return
+    yield '🟢 СТАТУС: работаем — шаг 1/3 подготовка данных.'
     import sys
     sys.path.insert(0, W2L)
     from face_detection import FaceAlignment, LandmarksType
@@ -80,6 +85,7 @@ def preprocess(video, max_frames=6000):
         if len(frames) < 25:
             continue
         sid = os.path.splitext(os.path.basename(seg))[0]
+        yield f'🟢 Обрабатываю сегмент {sid}…'
         fdir = os.path.join(ds, sid)
         os.makedirs(fdir, exist_ok=True)
         last = None
@@ -107,8 +113,8 @@ def preprocess(video, max_frames=6000):
                 crop = cv2.resize(fr[int(h*0.1):int(h*0.7), int(w*0.25):int(w*0.75)], (96, 96))
             cv2.imwrite(os.path.join(fdir, f'{i:05d}.jpg'), crop)
             total += 1
-            if i % 250 == 0:
-                yield f'{sid}: кадр {i}/{len(frames)} (всего {total})'
+            if i % 100 == 0:
+                yield f'🟢 {sid}: кадр {i}/{len(frames)} (всего {total}/{int(max_frames)})'
         sh(f'{FF} -y -loglevel error -i "{seg}" -ar 16000 -ac 1 {fdir}/audio.wav')
         report.append(f'{sid}: {min(len(frames), int(max_frames))} кадров')
         if total >= int(max_frames):
