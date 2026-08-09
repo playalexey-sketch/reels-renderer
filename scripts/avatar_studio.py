@@ -199,6 +199,19 @@ def generate(base_video, audio):
 
 import gradio as gr
 
+# защита от бага gradio_client (bool в json-schema) — работает на любых версиях gradio
+try:
+    import gradio_client.utils as _gcu
+    _orig_j = _gcu.jsonschema_to_python_type
+    def _safe_j(schema, defs=None):
+        try:
+            return _orig_j(schema, defs)
+        except Exception:
+            return 'dict'
+    _gcu.jsonschema_to_python_type = _safe_j
+except Exception:
+    pass
+
 with gr.Blocks(title='Avatar Studio') as demo:
     gr.Markdown('# AVATAR STUDIO — персональный аватар (стандарт HeyGen-класса)')
     gr.Markdown(STANDARD)
