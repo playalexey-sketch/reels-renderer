@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-13: текстура 0.20)
+# REELS RENDERER — КОНЕЧНЫЙ ЦЕЛЬНЫЙ СКРИПТ (v final-14)
 
 # ================= ШАГ 1 =================
 import os, urllib.request
@@ -147,7 +147,7 @@ for p in fs:
     img = img + hf*0.20*facemask
     m = img[my0:my1, mx0:mx1]
     b = cv2.GaussianBlur(m, (0,0), 0.8)
-    img[my0:my1, mx0:mx1] = cv2.addWeighted(m, 1.25, b, -0.25, 0)
+    img[my0:my1, mx0:mx1] = np.clip(cv2.addWeighted(m, 1.25, b, -0.25, 0), 0, 255)
     prev = img
     cv2.imwrite(p, np.clip(img,0,255).astype(np.uint8))
 !ffmpeg -y -loglevel error -framerate 50 -i /content/fr5/f_%05d.png -i {srcv} -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a copy /content/result_v5.mp4
