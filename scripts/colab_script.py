@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ ПОЛНОГО ЦИКЛА (v final-15)
-# Kaggle: New Notebook -> GPU + Internet -> вставить ВСЁ в одну ячейку -> запустить.
-# На выходе в /kaggle/working: reels_v3_512_facesharp.mp4, reels_v4_512_w2l_50fps.mp4, reels_v5_maxreal.mp4
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ ПОЛНОГО ЦИКЛА (v final-16)
 
 # ================= ЭТАП 1 =================
 import os, urllib.request
@@ -14,6 +12,19 @@ os.makedirs('gfpgan/weights', exist_ok=True)
 !apt-get -qq install -y ffmpeg
 !pip uninstall -q -y torchaudio 2>/dev/null
 !pip install -q torch==2.5.1 torchvision==0.20.1 kornia==0.7.3 gfpgan facexlib basicsr librosa==0.10.2 safetensors yacs pydub
+# совместимость pickle между версиями torch (модели НЕ меняем)
+import types as _ty, sys as _sys
+_m = _ty.ModuleType('torch.utils.serialization')
+import torch as _torch
+for _src in (_torch.storage, _torch._utils, _torch):
+    for _n in dir(_src):
+        if not hasattr(_m, _n):
+            try: setattr(_m, _n, getattr(_src, _n))
+            except Exception: pass
+_sys.modules['torch.utils.serialization'] = _m
+for _f in ['gfpgan/weights/alignment_WFLW_4HG.pth','gfpgan/weights/detection_Resnet50_Final.pth','gfpgan/weights/parsing_parsenet.pth','gfpgan/weights/GFPGANv1.4.pth']:
+    if os.path.isfile(_f) and os.path.getsize(_f) < 1000000:
+        os.remove(_f)
 !sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' /usr/local/lib/python3.12/dist-packages/basicsr/data/degradations.py
 !sed -i "s/trans_params = np.array(\[w0, h0, s, t\[0\], t\[1\]\])/t = np.asarray(t).reshape(-1); s = float(np.asarray(s).reshape(-1)[0]); trans_params = np.array([w0, h0, s, float(t[0]), float(t[1])])/" /content/ST_MAIN/src/face3d/util/preprocess.py
 !sed -i 's/np.array(\[float(item) for item in np.hsplit(trans_params, 5)\])/np.asarray(trans_params, dtype=np.float64).reshape(-1)/' /content/ST_MAIN/src/face3d/util/preprocess.py
