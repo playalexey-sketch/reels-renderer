@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-22: + ячейка 7 v6-резкость губ)
+# REELS RENDERER — ЕДИНЫЙ СКРИПТ (v final-23: + ячейка 8 v7-стабилизация)
 
 # ================= ЭТАП 1 =================
 def _sh(cmd):
@@ -4069,3 +4069,45 @@ except BaseException:
     os.makedirs('/kaggle/working', exist_ok=True)
     _s6.copy('/content/result_v6.mp4', '/kaggle/working/reels_v6_ultra.mp4')
     print('сохранено в /kaggle/working/reels_v6_ultra.mp4')
+
+# ================= ЭТАП 8 =================
+# Ячейка 8 (v7): убираем ПЕРЕРИСОВЫВАНИЕ — временная стабилизация через optical flow
+import glob, os, cv2, numpy as np
+srcv = '/content/result_v6.mp4' if os.path.isfile('/content/result_v6.mp4') else '/content/result_50fps.mp4'
+vd = '/content/fr7'; os.makedirs(vd, exist_ok=True)
+for q in glob.glob(vd+'/*.png'): os.remove(q)
+_sh(f'''ffmpeg -y -loglevel error -i {srcv} /content/fr7/f_%05d.png''')
+fs = sorted(glob.glob(vd+'/f_*.png'))
+H, W = cv2.imread(fs[0]).shape[:2]
+my0,my1,mx0,mx1 = int(H*0.36), int(H*0.52), int(W*0.28), int(W*0.72)
+def enh(img):
+    img = img.astype(np.float32)
+    orig_m = img[my0:my1, mx0:mx1].copy()
+    lab = cv2.cvtColor(img[my0:my1, mx0:mx1].astype(np.uint8), cv2.COLOR_BGR2LAB)
+    lab[...,0] = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8,8)).apply(lab[...,0])
+    mouth = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR).astype(np.float32)
+    b = cv2.GaussianBlur(mouth,(0,0),1.0)
+    mouth = np.clip(cv2.addWeighted(mouth,1.35,b,-0.35,0),0,255)
+    img[my0:my1,mx0:mx1] = 0.75*mouth+0.25*orig_m
+    return img
+raws = [cv2.imread(p) for p in fs]
+outs = []
+for i, r in enumerate(raws):
+    img = enh(r)
+    if i > 0:
+        fl = cv2.calcOpticalFlowFarneback(cv2.cvtColor(raws[i-1], cv2.COLOR_BGR2GRAY), cv2.cvtColor(r, cv2.COLOR_BGR2GRAY), None, 0.5, 5, 21, 5, 7, 1.5, 0)
+        yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        wp = cv2.remap(outs[-1], (xx+fl[...,0]).astype(np.float32), (yy+fl[...,1]).astype(np.float32), cv2.INTER_LINEAR)
+        img = img*0.65 + wp*0.35
+    outs.append(img)
+    cv2.imwrite(fs[i], np.clip(img,0,255).astype(np.uint8))
+_sh(f'''ffmpeg -y -loglevel error -framerate 50 -i /content/fr7/f_%05d.png -i {srcv} -map 0:v -map 1:a -c:v libx264 -crf 17 -pix_fmt yuv420p -movflags +faststart -c:a copy /content/result_v7.mp4''')
+try:
+    import google.colab.files as _g7
+    _g7.download('/content/result_v7.mp4')
+    print('ФАЙЛ СКАЧАЛСЯ: result_v7.mp4')
+except BaseException:
+    import shutil as _s7
+    os.makedirs('/kaggle/working', exist_ok=True)
+    _s7.copy('/content/result_v7.mp4', '/kaggle/working/reels_v7_stable.mp4')
+    print('сохранено в /kaggle/working/reels_v7_stable.mp4')
