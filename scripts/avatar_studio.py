@@ -20,7 +20,7 @@ AVATAR STUDIO v2 — САМОПРОВЕРЯЮЩИЙСЯ конвейер (Kaggle
 Переменные окружения:
   STUDIO_DIR   — рабочая папка (Kaggle: /kaggle/working/STUDIO)
   MARIA_VIDEO  — путь к исходному видео
-  MAX_FRAMES   — сколько кадров собрать (по умолчанию 6000)
+  MAX_FRAMES   — сколько кадров собрать (по умолчанию 2000 — этого достаточно)
   TRAIN_EPOCHS — сколько эпох обучения (по умолчанию 2)
   STALL_SEC    — порог молчания для watchdog в секундах (по умолчанию 1800)
 """
@@ -40,11 +40,13 @@ FINV   = os.path.join(BASE, 'personal_final.mp4')
 SRCV   = os.path.join(BASE, 'src_maria.mp4')
 
 VIDEO      = os.environ.get('MARIA_VIDEO', '/kaggle/input/datasets/alexeyms/mariairkhina/Maria.mp4')
-MAX_FRAMES = int(os.environ.get('MAX_FRAMES', '6000'))
-MIN_FRAMES = int(os.environ.get('MIN_FRAMES', '1500'))
+MAX_FRAMES = int(os.environ.get('MAX_FRAMES', '2000'))
+MIN_FRAMES = int(os.environ.get('MIN_FRAMES', '800'))
 EPOCHS     = int(os.environ.get('TRAIN_EPOCHS', '2'))
 LR         = float(os.environ.get('TRAIN_LR', '1e-5'))
 STALL_SEC  = int(os.environ.get('STALL_SEC', '1800'))
+SEG_SECONDS = 8       # длительность одного куска
+SEG_FRAMES = 190      # сколько кадров в среднем даёт один кусок
 FF = 'ffmpeg'
 
 W2L_URL  = 'https://github.com/Rudrabha/Wav2Lip.git'
@@ -99,6 +101,34 @@ def disk_ok(need_mb=500):
     if free < need_mb:
         raise RuntimeError('мало места на диске: %d МБ (нужно >= %d МБ)' % (free, need_mb))
     return True
+
+
+def du_mb(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total // (1024 * 1024)
+
+
+def disk_report(tag=''):
+    try:
+        u = shutil.disk_usage(BASE)
+        log('💾 диск: свободно %.1f ГБ из %.1f ГБ%s' % (u.free / 2**30, u.total / 2**30, (' | ' + tag) if tag else ''))
+        for name, p in (('сегменты', SEGD), ('кадры', DSD), ('папка STUDIO', BASE)):
+            if os.path.isdir(p):
+                log('   %s: %d МБ' % (name, du_mb(p)))
+    except Exception as e:
+        log('disk_report: ' + repr(e))
+
+
+def need_segs():
+    """Сколько кусков реально нужно под MAX_FRAMES (с запасом на брак)."""
+    n = int((MAX_FRAMES + SEG_FRAMES - 1) // SEG_FRAMES) + 6
+    return max(8, min(n, 40))
 
 
 def download(url, dst, timeout=1800):
@@ -338,39 +368,77 @@ def seg_status():
     return ('ok' if not bad else 'partial'), ss, bad
 
 
-def cut_segments(src):
-    """Главное правило: если куски уже нарезаны — НИЧЕГО не режем заново.
-    Чиним только битый кусок; полная перенарезка — только если всё сломано."""
-    st, ss, bad = seg_status()
-    if st == 'ok':
-        log('сегменты уже нарезаны (%d шт) — пропускаю нарезку' % len(ss))
+def _seg_index(path):
+    return int(os.path.basename(path)[4:7])
+
+
+def trim_segs(need):
+    """Убирает куски сверх нужного количества (и их кадры) — освобождает место,
+    НЕ трогая нужные куски."""
+    ss = seg_list()
+    if len(ss) <= need:
         return
-    if st == 'partial':
-        log('сегменты уже нарезаны, битых: %d — чиню ТОЛЬКО битые, остальное не трогаю' % len(bad))
-        for s in bad:
-            idx = int(os.path.basename(s)[4:7])
+    removed_mb = 0
+    for s in ss[need:]:
+        sid = os.path.splitext(os.path.basename(s))[0]
+        d = os.path.join(DSD, sid)
+        if os.path.isdir(d):
+            removed_mb += du_mb(d)
+            shutil.rmtree(d, ignore_errors=True)
+        try:
+            removed_mb += os.path.getsize(s) // (1024 * 1024)
+            os.remove(s)
+        except OSError:
+            pass
+    log('💾 удалил лишних кусков: %d (оставил %d из %d), освобождено ~%d МБ'
+        % (len(ss) - need, need, len(ss), removed_mb))
+
+
+def _cut_cmd(src, dst, start=None, total_sec=None):
+    """Команда ffmpeg: компактные куски (720p, q4) — в разы меньше места."""
+    scale = '-vf "scale=min(1280,iw):-2"'
+    ss_part = ('-ss %d ' % start) if start is not None else ''
+    t_part = ('-t %d ' % total_sec) if total_sec is not None else ''
+    return ('"%s" -y -loglevel error %s-i "%s" %s-r 25 %s -c:v mjpeg -q:v 4 %s'
+            % (FF, ss_part, src, t_part, scale, dst))
+
+
+def cut_segments(src):
+    """Главное правило: если куски уже нарезаны — НИЧЕГО не режем заново,
+    только убираем лишнее. Чиним точечно битые; полная перенарезка — лишь когда
+    всё сломано (и тоже только нужное число кусков)."""
+    need = need_segs()
+    st, ss, bad = seg_status()
+    if len(ss) >= need:
+        bad_need = [b for b in bad if _seg_index(b) < need]
+        if st == 'ok' or not bad_need:
+            trim_segs(need)
+            log('сегменты уже нарезаны (%d шт, нужно %d) — пропускаю нарезку' % (len(seg_list()), need))
+            return
+        log('сегменты нарезаны, битых среди нужных: %d — чиню ТОЛЬКО их' % len(bad_need))
+        for b in bad_need:
+            idx = _seg_index(b)
             beat('починка сегмента %d' % idx)
             try:
-                os.remove(s)
+                os.remove(b)
             except OSError:
                 pass
-            run_cmd('"%s" -y -loglevel error -ss %d -i "%s" -t 8 -r 25 -c:v mjpeg -q:v 2 "%s"'
-                    % (FF, idx * 8, src, s), timeout=600)
-        st2, ss2, _ = seg_status()
-        if st2 == 'ok':
-            log('сегменты починены точечно: %d шт, перенарезка не понадобилась' % len(ss2))
+            run_cmd(_cut_cmd(src, '"%s"' % b, start=idx * SEG_SECONDS, total_sec=SEG_SECONDS), timeout=600)
+        if seg_status()[0] == 'ok':
+            trim_segs(need)
+            log('сегменты готовы (%d шт), перенарезка не понадобилась' % len(seg_list()))
             return
-        log('точечная починка не помогла — режу заново всё')
+        log('точечная починка не помогла — перережу только нужные %d кусков' % need)
     for s in seg_list():
         try:
             os.remove(s)
         except OSError:
             pass
-    log('режу видео на сегменты по 8 секунд…')
-    beat('ffmpeg: нарезка сегментов')
-    p = run_cmd('"%s" -y -loglevel error -i "%s" -r 25 -c:v mjpeg -q:v 2 '
-                '-f segment -segment_time 8 -reset_timestamps 1 "%s/seg_%%03d.avi"'
-                % (FF, src, SEGD), timeout=3600)
+    log('режу только первые %d кусков (%d сек видео) — этого хватит на %d кадров'
+        % (need, need * SEG_SECONDS, MAX_FRAMES))
+    beat('ffmpeg: нарезка %d сегментов' % need)
+    dst = os.path.join(SEGD, 'seg_%03d.avi')
+    p = run_cmd(_cut_cmd(src, '"%s"' % dst, total_sec=need * SEG_SECONDS), timeout=1800)
     if p.returncode != 0 or seg_status()[0] != 'ok':
         raise RuntimeError('нарезка сегментов не удалась: ' + (p.stderr or '')[-200:])
     log('нарезано сегментов: %d' % len(seg_list()))
@@ -757,6 +825,12 @@ def gen_work():
                 '-crf 18 -movflags +faststart -c:a aac -b:a 128k "%s"' % (FF, RAWV, FINV), timeout=1800)
     if p.returncode != 0 or not os.path.isfile(FINV):
         raise RuntimeError('сборка финального видео не удалась')
+    if os.path.isfile(RAWV):
+        try:
+            os.remove(RAWV)
+            log('💾 временный raw-файл удалён (освобождено место)')
+        except OSError:
+            pass
     log('🎬 финальное видео: ' + FINV)
 
 
@@ -805,12 +879,26 @@ def run_all():
         log('AVATAR STUDIO v2 — самопроверяющийся конвейер')
         log('рабочая папка: ' + BASE)
         log('видео: %s (существует: %s)' % (VIDEO, os.path.isfile(VIDEO)))
-        log('кадров: %d | эпох: %d | watchdog: %d с | устройство: %s'
-            % (MAX_FRAMES, EPOCHS, STALL_SEC, _devstr()))
+        log('кадров: %d | эпох: %d | кусков нужно: %d | watchdog: %d с | устройство: %s'
+            % (MAX_FRAMES, EPOCHS, need_segs(), STALL_SEC, _devstr()))
+        disk_report('старт')
         res = {}
         res['setup'] = run_stage('setup', setup_verify, setup_work, setup_verify)
+        if res['setup']:
+            disk_report('перед датасетом')
         res['dataset'] = run_stage('dataset', dataset_done, frames_work, dataset_done) if res['setup'] else False
+        if res['dataset']:
+            disk_report('перед обучением')
         res['train'] = run_stage('train', train_verify, train_work, train_verify) if res['dataset'] else False
+        if res['train']:
+            # двойной чекпоинт больше не нужен — освобождаем ~416 МБ
+            if os.path.isfile(FLAG) and os.path.isfile(LASTP):
+                try:
+                    os.remove(LASTP)
+                    log('💾 промежуточный чекпоинт удалён (освобождено ~416 МБ)')
+                except OSError:
+                    pass
+            disk_report('перед генерацией')
         res['generate'] = run_stage('generate', gen_done, gen_work, gen_verify) if res['train'] else False
         log('═' * 56)
         log('ИТОГ:')
