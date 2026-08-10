@@ -991,10 +991,10 @@ def xtts_local_synth(text, voice_ref, out):
             if p.returncode != 0:
                 log('⚠️ pip TTS: ' + ((p.stdout or '') + (p.stderr or ''))[-400:])
                 raise RuntimeError('pip install TTS не удался')
-            p = run_cmd('MPLBACKEND=Agg "%s" -c "import torch, TTS; print(\'XTTS_ENV_OK\', torch.__version__, torch.cuda.is_available())"'
+            p = run_cmd('MPLBACKEND=Agg "%s" -c "import torch, TTS; print(\'ОКРУЖЕНИЕ_OK\', torch.__version__, torch.cuda.is_available())"'
                         % env_py, timeout=300)
             log('🎙 окружение: ' + (p.stdout or p.stderr or '')[-200:].replace('\n', ' '))
-            if 'XTTS_ENV_OK' not in (p.stdout or ''):
+            if 'ОКРУЖЕНИЕ_OK' not in (p.stdout or ''):
                 raise RuntimeError('venv с TTS не работает')
         synth = os.path.join(BASE, 'xtts_synth.py')
         open(synth, 'w', encoding='utf-8').write(SYNTH_PY)
@@ -1020,13 +1020,13 @@ SYNTH_PY = (
     "    from TTS.api import TTS\n"
     "    text, ref, out = sys.argv[1:4]\n"
     "    dev = 'cuda' if torch.cuda.is_available() else 'cpu'\n"
-    "    print('XTTS: device', dev, flush=True)\n"
+    "    print('XTTS: устройство', dev, flush=True)\n"
     "    tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2').to(dev)\n"
-    "    print('XTTS: model loaded', flush=True)\n"
+    "    print('XTTS: модель загружена', flush=True)\n"
     "    tts.tts_to_file(text=text, speaker_wav=ref, language='ru', file_path=out)\n"
-    "    print('XTTS: done', flush=True)\n"
+    "    print('XTTS: ГОТОВО', flush=True)\n"
     "except Exception:\n"
-    "    print('XTTS: ERROR', flush=True)\n"
+    "    print('XTTS: ОШИБКА', flush=True)\n"
     "    traceback.print_exc()\n"
     "    sys.exit(3)\n")
 
