@@ -987,7 +987,7 @@ def xtts_local_synth(text, voice_ref, out):
                 raise RuntimeError('pip install torch не удался')
             beat('XTTS: ставлю TTS в venv')
             log('🎙 pip: TTS 0.22 + huggingface_hub…')
-            p = run_cmd('"%s" -m pip install -q TTS==0.22.0 huggingface_hub' % env_py, timeout=2400)
+            p = run_cmd('"%s" -m pip install -q TTS==0.22.0 huggingface_hub transformers==4.36.2' % env_py, timeout=2400)
             if p.returncode != 0:
                 log('⚠️ pip TTS: ' + ((p.stdout or '') + (p.stderr or ''))[-400:])
                 raise RuntimeError('pip install TTS не удался')
@@ -998,6 +998,16 @@ def xtts_local_synth(text, voice_ref, out):
                 raise RuntimeError('venv с TTS не работает')
         synth = os.path.join(BASE, 'xtts_synth.py')
         open(synth, 'w', encoding='utf-8').write(SYNTH_PY)
+        # починка уже созданного окружения: новые transformers ломают TTS 0.22
+        # (убрали BeamSearchScorer) — фиксируем 4.36.2, метка чтобы не гонять pip зря
+        fix_marker = os.path.join(BASE, '.xtts_fix_transformers_4362')
+        if not os.path.isfile(fix_marker):
+            log('🎙 обновляю transformers до совместимой версии (4.36.2)…')
+            p = run_cmd('"%s" -m pip install -q "transformers==4.36.2"' % env_py, timeout=1200)
+            if p.returncode == 0:
+                open(fix_marker, 'w').write('ok')
+            else:
+                log('⚠️ pip transformers: ' + ((p.stdout or '') + (p.stderr or ''))[-300:])
         log('🎙 синтезирую фразу локальным XTTS v2…')
         # MPLBACKEND=Agg: в Kaggle-ноутбуке переменная MPLBACKEND указывает на
         # backend_inline, которого нет в чистом venv — matplotlib падал при импорте.
