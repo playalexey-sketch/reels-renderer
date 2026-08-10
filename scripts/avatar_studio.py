@@ -51,6 +51,9 @@ LR         = float(os.environ.get('TRAIN_LR', '1e-5'))
 STALL_SEC  = int(os.environ.get('STALL_SEC', '1800'))
 PREVIEW_ITERS = int(os.environ.get('PREVIEW_ITERS', '200'))   # первый предпросмотр после N итераций
 PREVIEW_STOP  = os.environ.get('PREVIEW_STOP', '0') == '1'    # остановиться после первого предпросмотра
+PHRASE     = os.environ.get('PHRASE', '')                     # тестовая фраза для озвучки (клон голоса)
+XTTS_URL   = os.environ.get('XTTS_URL', 'http://195.209.214.155:9090')
+DATA_VERSION = 2   # версия формата обучающих данных (менялась — переобучаем)
 SEG_SECONDS = 8       # длительность одного куска
 SEG_FRAMES = 190      # сколько кадров в среднем даёт один кусок
 FF = 'ffmpeg'
@@ -765,10 +768,13 @@ def train_work():
             def prep(ids):
                 x = np.asarray([cv2.imread(fs[j]) for j in ids]) / 255.0
                 x = np.transpose(x, (3, 0, 1, 2))
-                x[:, :, 48:, :] = 0.0
                 return x
 
+            # ВАЖНО (как в официальном wav2lip_train.py): зануляется нижняя половина
+            # ТОЛЬКО первого окна; второе («неверное») окно остаётся целым —
+            # это опорная картинка, модель без неё даёт артефакты.
             xw = prep(range(i, i + T))
+            xw[:, :, 48:, :] = 0.0
             y = np.asarray([cv2.imread(fs[j]) for j in range(i, i + T)]) / 255.0
             y = np.transpose(y, (3, 0, 1, 2))
             xw2 = prep(range(w, w + T))
@@ -782,7 +788,7 @@ def train_work():
     prog = state().get('train', {})
     start_e = int(prog.get('epoch', 0))
     skip_it = int(prog.get('iter', 0))
-    if not os.path.isfile(LASTP):
+    if not os.path.isfile(LASTP) or state().get('data_v') != DATA_VERSION:
         start_e, skip_it = 0, 0
     model = Wav2Lip().to(dev)
     src_ckpt = LASTP if (start_e > 0 or skip_it > 0) else os.path.join(W2L, 'checkpoints', 'wav2lip.pth')
@@ -840,6 +846,7 @@ def train_work():
         if PREVIEW_STOP and pv:
             raise PreviewStop()
     open(FLAG, 'w').write('ok')
+    save_state(data_v=DATA_VERSION)
     log('обучение завершено, модель сохранена: ' + CKPT)
     try:
         del model, opt, ds, dl
@@ -850,6 +857,9 @@ def train_work():
 
 def train_verify():
     if not (os.path.isfile(FLAG) and os.path.isfile(CKPT)):
+        return False
+    if state().get('data_v') != DATA_VERSION:
+        log('⚠️ формат обучающих данных изменился (v%d) — требуется переобучение' % DATA_VERSION)
         return False
     import torch
     sys.path.insert(0, W2L)
@@ -862,6 +872,70 @@ def train_verify():
 
 
 # ─────────────────────────── ЭТАП 4: generate ───────────────────────────
+
+def xtts_synth(text, voice_ref, out):
+    """Синтез фразы клонированным голосом через сервис XTTS пользователя.
+    Пробует несколько форматов API. True — аудио записано в out."""
+    import urllib.request
+    import json as _json
+    import uuid as _uuid
+
+    def post_json(u, payload):
+        req = urllib.request.Request(u, data=_json.dumps(payload).encode(),
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=600) as r:
+            return r.status, r.read()
+
+    def post_multipart(u, fields, filepath):
+        boundary = _uuid.uuid4().hex
+        body = b''
+        for k, v in fields.items():
+            body += ('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'
+                     % (boundary, k, v)).encode()
+        fn = os.path.basename(filepath)
+        body += ('--%s\r\nContent-Disposition: form-data; name="voice_file"; '
+                 'filename="%s"; Content-Type: audio/wav\r\n\r\n' % (boundary, fn)).encode()
+        body += open(filepath, 'rb').read() + b'\r\n--%s--\r\n' % boundary.encode()
+        req = urllib.request.Request(u, data=body,
+                                     headers={'Content-Type': 'multipart/form-data; boundary=%s' % boundary})
+        with urllib.request.urlopen(req, timeout=600) as r:
+            return r.status, r.read()
+
+    def looks_audio(b):
+        return len(b) > 8000 and (b[:4] == b'RIFF' or b[:3] == b'ID3' or b[:2] == b'\xff\xfb')
+
+    strategies = [
+        ('multipart /tts_with_voice_clone',
+         lambda: post_multipart(XTTS_URL + '/tts_with_voice_clone', {'text': text, 'language': 'ru'}, voice_ref)),
+        ('json /tts_with_voice_clone',
+         lambda: post_json(XTTS_URL + '/tts_with_voice_clone', {'text': text, 'language': 'ru', 'voice_file': voice_ref})),
+        ('json /v1/tts_with_voice_clone',
+         lambda: post_json(XTTS_URL + '/v1/tts_with_voice_clone', {'text': text, 'language': 'ru', 'voice_file': voice_ref})),
+        ('json /tts_to_speaker',
+         lambda: post_json(XTTS_URL + '/tts_to_speaker', {'text': text, 'language': 'ru', 'speaker_id': 'xtts_ru'})),
+    ]
+    for name, fn in strategies:
+        try:
+            beat('XTTS: ' + name)
+            status, body = fn()
+            if status == 200 and looks_audio(body):
+                open(out, 'wb').write(body)
+                log('🎙 фраза синтезирована (' + name + ')')
+                return True
+            if status == 200:
+                try:
+                    d = _json.loads(body)
+                    if isinstance(d, dict) and 'audio' in d:
+                        import base64
+                        open(out, 'wb').write(base64.b64decode(d['audio']))
+                        log('🎙 фраза синтезирована (' + name + ', base64)')
+                        return True
+                except Exception:
+                    pass
+        except Exception as e:
+            log('⚠️ xtts ' + name + ': ' + repr(e))
+    return False
+
 
 def run_w2l(ckpt, base, aud, out_raw):
     """Официальный inference.py с батчами 8/4/2/1 и живым выводом.
@@ -968,7 +1042,26 @@ def resolve_audio():
 
 def gen_work():
     base = resolve_base()
-    aud_raw = resolve_audio()
+    aud_raw = None
+    if PHRASE:
+        want = os.path.join(BASE, 'phrase_audio.wav')
+        if not (state().get('phrase') == PHRASE and os.path.isfile(want) and os.path.getsize(want) > 8000):
+            voice_ref = os.path.join(BASE, 'voice_ref.wav')
+            if not (os.path.isfile(voice_ref) and os.path.getsize(voice_ref) > 8000):
+                ref_src = os.path.join(BASE, 'golos_iz_video.wav')
+                if not os.path.isfile(ref_src):
+                    ref_src = resolve_audio()
+                run_cmd('"%s" -y -loglevel error -i "%s" -t 15 -ar 16000 -ac 1 "%s"'
+                        % (FF, ref_src, voice_ref), timeout=300)
+            log('🎙 синтезирую фразу клонированным голосом: "%s"' % PHRASE)
+            if xtts_synth(PHRASE, voice_ref, want):
+                save_state(phrase=PHRASE)
+        if os.path.isfile(want) and os.path.getsize(want) > 8000:
+            aud_raw = want
+        else:
+            log('⚠️ XTTS недоступен — беру исходное аудио из видео')
+    if aud_raw is None:
+        aud_raw = resolve_audio()
     # Длина финального видео в Wav2Lip = длине аудио. Если аудио длиннее базового
     # видео — лицо начнёт «заикаться» и рендер раздувается. Режем аудио под видео.
     bdur = media_duration(base)
