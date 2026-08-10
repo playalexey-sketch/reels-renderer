@@ -53,6 +53,7 @@ PREVIEW_ITERS = int(os.environ.get('PREVIEW_ITERS', '200'))   # первый п�
 PREVIEW_STOP  = os.environ.get('PREVIEW_STOP', '0') == '1'    # остановиться после первого предпросмотра
 PHRASE     = os.environ.get('PHRASE', '')                     # тестовая фраза для озвучки (клон голоса)
 XTTS_URL   = os.environ.get('XTTS_URL', 'http://195.209.214.155:9090')
+PHRASE_AUD = None   # путь к синтезированной фразе (заполняет resolve_phrase_audio)
 DATA_VERSION = 2   # версия формата обучающих данных (менялась — переобучаем)
 SEG_SECONDS = 8       # длительность одного куска
 SEG_FRAMES = 190      # сколько кадров в среднем даёт один кусок
@@ -873,8 +874,8 @@ def train_verify():
 
 # ─────────────────────────── ЭТАП 4: generate ───────────────────────────
 
-def xtts_synth(text, voice_ref, out):
-    """Синтез фразы клонированным голосом через сервис XTTS пользователя.
+def xtts_synth(text, voice_ref, out, timeout=30):
+    """Синтез фразы клонированным голосом через HTTP-сервис XTTS пользователя.
     Пробует несколько форматов API. True — аудио записано в out."""
     import urllib.request
     import json as _json
@@ -883,7 +884,7 @@ def xtts_synth(text, voice_ref, out):
     def post_json(u, payload):
         req = urllib.request.Request(u, data=_json.dumps(payload).encode(),
                                      headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=600) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, r.read()
 
     def post_multipart(u, fields, filepath):
@@ -898,7 +899,7 @@ def xtts_synth(text, voice_ref, out):
         body += open(filepath, 'rb').read() + b'\r\n--%s--\r\n' % boundary.encode()
         req = urllib.request.Request(u, data=body,
                                      headers={'Content-Type': 'multipart/form-data; boundary=%s' % boundary})
-        with urllib.request.urlopen(req, timeout=600) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, r.read()
 
     def looks_audio(b):
@@ -935,6 +936,74 @@ def xtts_synth(text, voice_ref, out):
         except Exception as e:
             log('⚠️ xtts ' + name + ': ' + repr(e))
     return False
+
+
+def xtts_local_synth(text, voice_ref, out):
+    """Клонирование голоса ЛОКАЛЬНО на этой машине (Coqui XTTS v2, HuggingFace).
+    Используем, когда HTTP-сервис недоступен. True — аудио записано в out."""
+    try:
+        import importlib.util as _iu
+        import torch as _t
+        if _iu.find_spec('TTS') is None:
+            # torchaudio той же версии, что torch — чтобы pip НЕ трогал сам torch
+            tv = _t.__version__.split('+')[0]
+            log('🎙 ставлю пакет TTS (coqui) — пара минут…')
+            run_cmd('%s -m pip install -q "TTS==0.22.0" "torchaudio==%s"' % (sys.executable, tv), timeout=1500)
+        from TTS.api import TTS
+        dev = 'cuda' if _t.cuda.is_available() else 'cpu'
+        log('🎙 загружаю XTTS v2 (~1.8 ГБ при первом запуске)…')
+        beat('XTTS локально: загрузка модели')
+        tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2').to(dev)
+        log('🎙 синтезирую фразу локально…')
+        beat('XTTS локально: синтез')
+        tts.tts_to_file(text=text, speaker_wav=voice_ref, language='ru', file_path=out)
+        okk = os.path.isfile(out) and os.path.getsize(out) > 8000
+        try:
+            del tts
+            import gc
+            gc.collect()
+            if _t.cuda.is_available():
+                _t.cuda.empty_cache()
+        except Exception:
+            pass
+        if okk:
+            log('🎙 фраза синтезирована локальным XTTS v2')
+        return okk
+    except Exception as e:
+        log('⚠️ локальный XTTS: %r' % e)
+        return False
+
+
+def resolve_phrase_audio():
+    """Готовит аудио тестовой фразы (клон голоса Марии). Приоритеты:
+    кеш → HTTP-сервис (30 сек) → локальный XTTS на этой машине → None (фолбэк)."""
+    global PHRASE_AUD
+    if not PHRASE:
+        return None
+    want = os.path.join(BASE, 'phrase_audio.wav')
+    if state().get('phrase') == PHRASE and os.path.isfile(want) and os.path.getsize(want) > 8000:
+        PHRASE_AUD = want
+        log('🎙 фраза взята из кеша: ' + want)
+        return want
+    voice_ref = os.path.join(BASE, 'voice_ref.wav')
+    if not (os.path.isfile(voice_ref) and os.path.getsize(voice_ref) > 8000):
+        ref_src = os.path.join(BASE, 'golos_iz_video.wav')
+        if not os.path.isfile(ref_src):
+            ref_src = resolve_audio()
+        run_cmd('"%s" -y -loglevel error -i "%s" -t 15 -ar 16000 -ac 1 "%s"'
+                % (FF, ref_src, voice_ref), timeout=300)
+    log('🎙 синтезирую фразу клонированным голосом: "%s"' % PHRASE)
+    if xtts_synth(PHRASE, voice_ref, want, timeout=30):
+        save_state(phrase=PHRASE)
+        PHRASE_AUD = want
+        return want
+    log('🎙 сервер недоступен — запускаю локальный XTTS v2 (3–6 минут)…')
+    if xtts_local_synth(PHRASE, voice_ref, want):
+        save_state(phrase=PHRASE)
+        PHRASE_AUD = want
+        return want
+    log('⚠️ фразу синтезировать не удалось — беру исходное аудио из видео')
+    return None
 
 
 def run_w2l(ckpt, base, aud, out_raw):
@@ -983,14 +1052,17 @@ def make_preview(ckpt, tag):
             if p.returncode != 0 or not os.path.isfile(pb):
                 log('⚠️ предпросмотр: не удалось подготовить 5-сек видео')
                 return None
-        aud_full = resolve_audio()
+        # предпросмотр — СРАЗУ с тестовой фразой, если она готова
+        aud_full = PHRASE_AUD if (PHRASE_AUD and os.path.isfile(PHRASE_AUD)) else resolve_audio()
         pa = os.path.join(BASE, 'preview_audio.wav')
-        if not (os.path.isfile(pa) and os.path.getsize(pa) > 10000):
-            p = run_cmd('"%s" -y -loglevel error -i "%s" -t 5 -ar 16000 -ac 1 "%s"'
-                        % (FF, aud_full, pa), timeout=300)
-            if p.returncode != 0 or not os.path.isfile(pa):
-                log('⚠️ предпросмотр: не удалось подготовить аудио')
-                return None
+        t_part = '' if aud_full == PHRASE_AUD and PHRASE_AUD else '-t 5 '
+        p = run_cmd('"%s" -y -loglevel error -i "%s" %s-ar 16000 -ac 1 "%s"'
+                    % (FF, aud_full, t_part, pa), timeout=300)
+        if p.returncode != 0 or not os.path.isfile(pa):
+            log('⚠️ предпросмотр: не удалось подготовить аудио')
+            return None
+        if aud_full != resolve_audio():
+            log('👀 предпросмотр озвучен тестовой фразой')
         raw = os.path.join(BASE, 'preview_raw.mp4')
         if not run_w2l(ckpt, pb, pa, raw):
             log('⚠️ предпросмотр не получился — обучение продолжается')
@@ -1044,22 +1116,9 @@ def gen_work():
     base = resolve_base()
     aud_raw = None
     if PHRASE:
-        want = os.path.join(BASE, 'phrase_audio.wav')
-        if not (state().get('phrase') == PHRASE and os.path.isfile(want) and os.path.getsize(want) > 8000):
-            voice_ref = os.path.join(BASE, 'voice_ref.wav')
-            if not (os.path.isfile(voice_ref) and os.path.getsize(voice_ref) > 8000):
-                ref_src = os.path.join(BASE, 'golos_iz_video.wav')
-                if not os.path.isfile(ref_src):
-                    ref_src = resolve_audio()
-                run_cmd('"%s" -y -loglevel error -i "%s" -t 15 -ar 16000 -ac 1 "%s"'
-                        % (FF, ref_src, voice_ref), timeout=300)
-            log('🎙 синтезирую фразу клонированным голосом: "%s"' % PHRASE)
-            if xtts_synth(PHRASE, voice_ref, want):
-                save_state(phrase=PHRASE)
-        if os.path.isfile(want) and os.path.getsize(want) > 8000:
-            aud_raw = want
-        else:
-            log('⚠️ XTTS недоступен — беру исходное аудио из видео')
+        if PHRASE_AUD is None:
+            resolve_phrase_audio()
+        aud_raw = PHRASE_AUD
     if aud_raw is None:
         aud_raw = resolve_audio()
     # Длина финального видео в Wav2Lip = длине аудио. Если аудио длиннее базового
@@ -1172,6 +1231,8 @@ def run_all():
         if res['setup']:
             disk_report('перед датасетом')
         res['dataset'] = run_stage('dataset', dataset_done, frames_work, dataset_done) if res['setup'] else False
+        if res['dataset'] and PHRASE:
+            resolve_phrase_audio()   # фраза готовится ДО обучения — предпросмотры сразу с ней
         if res['dataset']:
             disk_report('перед обучением')
         try:
