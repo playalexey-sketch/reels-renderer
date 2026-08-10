@@ -963,13 +963,24 @@ def xtts_local_synth(text, voice_ref, out):
                 raise RuntimeError('python3.11 не развернулся')
             beat('XTTS: создаю venv')
             run_cmd('"%s" -m venv "%s"' % (pybin, os.path.join(BASE, 'xtts_env')), timeout=600)
-            beat('XTTS: ставлю torch+TTS в venv')
+            beat('XTTS: ставлю torch в venv')
+            log('🎙 pip: torch+torchaudio (cu121)…')
             p = run_cmd('"%s" -m pip install -q torch==2.2.2+cu121 torchaudio==2.2.2+cu121 '
-                        '--index-url https://download.pytorch.org/whl/cu121 && '
-                        '"%s" -m pip install -q TTS==0.22.0' % (env_py, env_py), timeout=2400)
+                        '--index-url https://download.pytorch.org/whl/cu121' % env_py, timeout=2400)
             if p.returncode != 0:
-                log('⚠️ pip install XTTS: ' + ((p.stdout or '') + (p.stderr or ''))[-300:])
+                log('⚠️ pip torch: ' + ((p.stdout or '') + (p.stderr or ''))[-400:])
+                raise RuntimeError('pip install torch не удался')
+            beat('XTTS: ставлю TTS в venv')
+            log('🎙 pip: TTS 0.22 + huggingface_hub…')
+            p = run_cmd('"%s" -m pip install -q TTS==0.22.0 huggingface_hub' % env_py, timeout=2400)
+            if p.returncode != 0:
+                log('⚠️ pip TTS: ' + ((p.stdout or '') + (p.stderr or ''))[-400:])
                 raise RuntimeError('pip install TTS не удался')
+            p = run_cmd('"%s" -c "import torch, TTS; print(\'XTTS_ENV_OK\', torch.__version__, torch.cuda.is_available())"'
+                        % env_py, timeout=300)
+            log('🎙 окружение: ' + (p.stdout or p.stderr or '')[-200:].replace('\n', ' '))
+            if 'XTTS_ENV_OK' not in (p.stdout or ''):
+                raise RuntimeError('venv с TTS не работает')
         synth = os.path.join(BASE, 'xtts_synth.py')
         open(synth, 'w', encoding='utf-8').write(SYNTH_PY)
         log('🎙 синтезирую фразу локальным XTTS v2…')
@@ -986,15 +997,21 @@ def xtts_local_synth(text, voice_ref, out):
 
 
 SYNTH_PY = (
-    "import sys, torch\n"
-    "from TTS.api import TTS\n"
-    "text, ref, out = sys.argv[1:4]\n"
-    "dev = 'cuda' if torch.cuda.is_available() else 'cpu'\n"
-    "print('XTTS: device', dev, flush=True)\n"
-    "tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2').to(dev)\n"
-    "print('XTTS: model loaded', flush=True)\n"
-    "tts.tts_to_file(text=text, speaker_wav=ref, language='ru', file_path=out)\n"
-    "print('XTTS: done', flush=True)\n")
+    "import sys, traceback\n"
+    "try:\n"
+    "    import torch\n"
+    "    from TTS.api import TTS\n"
+    "    text, ref, out = sys.argv[1:4]\n"
+    "    dev = 'cuda' if torch.cuda.is_available() else 'cpu'\n"
+    "    print('XTTS: device', dev, flush=True)\n"
+    "    tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2').to(dev)\n"
+    "    print('XTTS: model loaded', flush=True)\n"
+    "    tts.tts_to_file(text=text, speaker_wav=ref, language='ru', file_path=out)\n"
+    "    print('XTTS: done', flush=True)\n"
+    "except Exception:\n"
+    "    print('XTTS: ERROR', flush=True)\n"
+    "    traceback.print_exc()\n"
+    "    sys.exit(3)\n")
 
 
 def xtts_server_alive():
@@ -1026,6 +1043,13 @@ def resolve_phrase_audio():
         run_cmd('"%s" -y -loglevel error -i "%s" -t 15 -ar 16000 -ac 1 "%s"'
                 % (FF, ref_src, voice_ref), timeout=300)
     log('🎙 синтезирую фразу клонированным голосом: "%s"' % PHRASE)
+    pf = os.environ.get('PHRASE_FILE', '')
+    if pf and os.path.isfile(pf) and os.path.getsize(pf) > 8000:
+        shutil.copy(pf, want)
+        save_state(phrase=PHRASE)
+        PHRASE_AUD = want
+        log('🎙 фраза взята из файла пользователя: ' + pf)
+        return want
     if xtts_server_alive():
         if xtts_synth(PHRASE, voice_ref, want, timeout=30):
             save_state(phrase=PHRASE)
@@ -1212,7 +1236,70 @@ def gen_verify():
     if n < 10:
         log('⚠️ финальное видео битое (кадров: %d)' % n)
         return False
+    if PHRASE:
+        if not (PHRASE_AUD and os.path.isfile(PHRASE_AUD)):
+            log('🔴 проверка: фразы нет (синтез не удался) — видео не принимается')
+            return False
+        okm, corr = audio_match(FINV, PHRASE_AUD)
+        log('🔎 САМОПРОВЕРКА: фраза в видео? корреляция звука %.2f (нужно > 0.5)' % corr)
+        if not okm:
+            log('🔴 проверка: в видео НЕ фраза, а другой звук — перегенерирую')
+            return False
     return True
+
+
+def _read_wav_mono(path):
+    """Читает 16-бит wav (моно или стерео) как float-массив."""
+    import wave
+    import array
+    import numpy as np
+    w = wave.open(path)
+    ch = w.getnchannels()
+    raw = w.readframes(w.getnframes())
+    w.close()
+    a = array.array('h')
+    a.frombytes(raw)
+    x = np.asarray(a, dtype=np.float64) / 32768.0
+    if ch == 2:
+        x = x[0::2]
+    return x
+
+
+def _envelope(x, buckets=400):
+    import numpy as np
+    n = len(x) // buckets
+    if n == 0:
+        return np.zeros(1)
+    return np.abs(x[:n * buckets]).reshape(n, buckets).mean(axis=1)
+
+
+def audio_match(video, ref_wav):
+    """Сравнивает звук в видео с эталонной фразой по огибающей.
+    Возвращает (True/False, корреляция). Та же речь -> ~0.9, чужая -> ~0."""
+    import numpy as np
+    tmp = os.path.join(BASE, '_chk.wav')
+    p = run_cmd('"%s" -y -loglevel error -i "%s" -ar 16000 -ac 1 -acodec pcm_s16le "%s"'
+                % (FF, video, tmp), timeout=300)
+    if p.returncode != 0 or not os.path.isfile(tmp):
+        return False, -1.0
+    a = _read_wav_mono(tmp)
+    b = _read_wav_mono(ref_wav)
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+    if abs(len(a) - len(b)) > 16000 * 2:
+        return False, -1.0
+    ea, eb = _envelope(a), _envelope(b)
+    L = min(len(ea), len(eb))
+    if L < 10:
+        return False, -1.0
+    ea, eb = ea[:L], eb[:L]
+    ea = ea - ea.mean()
+    eb = eb - eb.mean()
+    denom = np.sqrt((ea * ea).sum() * (eb * eb).sum()) + 1e-9
+    corr = float((ea * eb).sum() / denom)
+    return (corr > 0.5, corr)
 
 
 # ─────────────────────────── главный запуск ───────────────────────────
@@ -1228,9 +1315,15 @@ def _devstr():
 
 
 def free_space_pre():
-    """Освобождает место ДО всех этапов: лишние куски и временные файлы.
-    Ничего нужного не трогает — только хвост сверх необходимого."""
+    """Освобождает место ДО всех этапов: лишние куски, временные файлы,
+    старые предпросмотры (пользователь их уже скачал)."""
     try:
+        for f in glob.glob(os.path.join(BASE, 'preview_*.mp4')):
+            try:
+                os.remove(f)
+                log('💾 удалён старый предпросмотр: ' + os.path.basename(f))
+            except OSError:
+                pass
         if os.path.isdir(SEGD):
             trim_segs(need_segs())
         if os.path.isfile(RAWV):
