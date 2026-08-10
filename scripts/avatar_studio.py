@@ -593,6 +593,21 @@ def frames_work():
 
 # ─────────────────────────── ЭТАП 3: train ───────────────────────────
 
+def crop_win(spec, frame_id):
+    """Окно мел-спектрограммы (16, 80) под номер кадра.
+    Если аудио короче видео (край клипа) — дополняет нулями до полного окна,
+    чтобы батч всегда собирался."""
+    import numpy as np
+    s0 = max(0, int(80.0 * (frame_id / 25.0)))
+    win = spec[s0:s0 + 16, :]
+    if win.shape[0] >= 16:
+        return win
+    out = np.zeros((16, 80), dtype=np.float32)
+    if win.size:
+        out[:win.shape[0], :win.shape[1]] = win
+    return out
+
+
 def clips_ok():
     return [d for d in sorted(glob.glob(DSD + '/*'))
             if os.path.isdir(d) and not os.path.isfile(os.path.join(d, '.bad'))]
@@ -665,10 +680,6 @@ def train_work():
         def __len__(self):
             return sum(max(1, len(self.files[c]) - self.T - 2) for c in self.clips)
 
-        def _crop_win(self, spec, frame_id):
-            s0 = int(80.0 * (frame_id / 25.0))
-            return spec[s0:s0 + 16, :]
-
         def __getitem__(self, idx):
             c = self.clips[idx % len(self.clips)]
             fs = self.files[c]
@@ -689,8 +700,8 @@ def train_work():
             xw2 = prep(range(w, w + T))
             x = np.concatenate([xw, xw2], axis=0)
             spec = self.mels[c]
-            mel = self._crop_win(spec, i)
-            indiv = np.asarray([self._crop_win(spec, j - 2).T for j in range(i + 1, i + 1 + T)])
+            mel = crop_win(spec, i)
+            indiv = np.asarray([crop_win(spec, j - 2).T for j in range(i + 1, i + 1 + T)])
             return (torch.FloatTensor(x), torch.FloatTensor(indiv).unsqueeze(1),
                     torch.FloatTensor(mel.T).unsqueeze(0), torch.FloatTensor(y))
 
