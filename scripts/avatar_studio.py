@@ -155,6 +155,19 @@ def media_duration(path):
     return None
 
 
+def free_gpu():
+    """Освобождает видеопамять перед рендером, чтобы не было OOM."""
+    try:
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            log('GPU: кеш очищен, свободно %.1f ГБ' % (torch.cuda.mem_get_info()[0] / 2**30))
+    except Exception as e:
+        log('free_gpu: ' + repr(e))
+
+
 def disk_ok(need_mb=500):
     free = shutil.disk_usage(BASE).free // (1024 * 1024)
     if free < need_mb:
@@ -828,6 +841,11 @@ def train_work():
             raise PreviewStop()
     open(FLAG, 'w').write('ok')
     log('обучение завершено, модель сохранена: ' + CKPT)
+    try:
+        del model, opt, ds, dl
+    except Exception:
+        pass
+    free_gpu()
 
 
 def train_verify():
@@ -846,8 +864,12 @@ def train_verify():
 # ─────────────────────────── ЭТАП 4: generate ───────────────────────────
 
 def run_w2l(ckpt, base, aud, out_raw):
-    """Официальный inference.py с батчами 16/4/1 и живым выводом.
-    True, если out_raw готов."""
+    """Официальный inference.py с батчами 8/4/2/1 и живым выводом.
+    Перед стартом убивает зависшие старые рендеры и чистит видеопамять,
+    чтобы не было OOM. True, если out_raw готов."""
+    # добиваем старые зависшие рендеры (если остались от прошлых запусков)
+    run_cmd('pkill -f w2l_infer.py || true', timeout=30)
+    free_gpu()
     infer_py = os.path.join(BASE, 'w2l_infer.py')
     open(infer_py, 'w').write(HELPER_INFER)
     if os.path.isfile(out_raw):
@@ -855,11 +877,11 @@ def run_w2l(ckpt, base, aud, out_raw):
             os.remove(out_raw)
         except OSError:
             pass
-    for bs in (16, 4, 1):
+    for bs in (8, 4, 2, 1):
         beat('инференс, батч %d' % bs)
         log('🟢 рендер губ: батч %d' % bs)
         try:
-            p = run_stream('cd "%s" && OMP_NUM_THREADS=2 "%s" "%s" "%s" "%s" "%s" "%s" %d'
+            p = run_stream('cd "%s" && OMP_NUM_THREADS=2 PYTHONUNBUFFERED=1 "%s" "%s" "%s" "%s" "%s" "%s" %d'
                            % (W2L, sys.executable, infer_py, ckpt, base, aud, out_raw, bs), timeout=3600)
             errtail = p.stdout[-300:]
         except Exception as e:
