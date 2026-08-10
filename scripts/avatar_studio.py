@@ -23,6 +23,10 @@ AVATAR STUDIO v2 — САМОПРОВЕРЯЮЩИЙСЯ конвейер (Kaggle
   MAX_FRAMES   — сколько кадров собрать (по умолчанию 2000 — этого достаточно)
   TRAIN_EPOCHS — сколько эпох обучения (по умолчанию 2)
   STALL_SEC    — порог молчания для watchdog в секундах (по умолчанию 1800)
+  PREVIEW_ITERS — через сколько итераций обучения сделать первый предпросмотр
+                  5-сек видео (по умолчанию 200 — это ~30 секунд на T4)
+  PREVIEW_STOP — '1' = остановиться сразу после первого предпросмотра,
+                 чтобы посмотреть результат и решить, продолжать или нет
 """
 import os, sys, time, glob, json, re, shutil, subprocess, threading, traceback
 
@@ -45,6 +49,8 @@ MIN_FRAMES = int(os.environ.get('MIN_FRAMES', '800'))
 EPOCHS     = int(os.environ.get('TRAIN_EPOCHS', '2'))
 LR         = float(os.environ.get('TRAIN_LR', '1e-5'))
 STALL_SEC  = int(os.environ.get('STALL_SEC', '1800'))
+PREVIEW_ITERS = int(os.environ.get('PREVIEW_ITERS', '200'))   # первый предпросмотр после N итераций
+PREVIEW_STOP  = os.environ.get('PREVIEW_STOP', '0') == '1'    # остановиться после первого предпросмотра
 SEG_SECONDS = 8       # длительность одного куска
 SEG_FRAMES = 190      # сколько кадров в среднем даёт один кусок
 FF = 'ffmpeg'
@@ -55,6 +61,20 @@ S3FD_URL = 'https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth
 
 MAIN_TID = None
 HEART = None
+
+HELPER_INFER = (
+    "import torch, runpy, sys, os\n"
+    "sys.path.insert(0, os.getcwd())\n"
+    "ckpt, face, audio, out, bs = sys.argv[1:6]\n"
+    "_tl = torch.load\n"
+    "torch.load = lambda *a, **k: _tl(*a, **{**k, 'weights_only': False})\n"
+    "sys.argv = ['i', '--checkpoint_path', ckpt, '--face', face, '--audio', audio, "
+    "'--outfile', out, '--pads', '0', '20', '0', '0', '--wav2lip_batch_size', bs]\n"
+    "runpy.run_path('inference.py', run_name='__main__')\n")
+
+
+class PreviewStop(Exception):
+    """Специальная остановка: первый предпросмотр готов, дальше не идём."""
 
 
 # ─────────────────────────── журнал и состояние ───────────────────────────
@@ -263,6 +283,8 @@ def run_stage(name, done_fn, work_fn, verify_fn, attempts=3):
         try:
             disk_ok(500)
             work_fn()
+        except PreviewStop:
+            raise
         except KeyboardInterrupt:
             log('⏹ этап «%s»: остановлено watchdog-ом (зависание) — буду повторять' % name)
         except Exception as e:
@@ -791,9 +813,19 @@ def train_work():
             if run_it % 500 == 0:
                 torch.save({'state_dict': model.state_dict()}, LASTP)
                 save_state(train={'epoch': e, 'iter': it})
+            if run_it == PREVIEW_ITERS:
+                # первый предпросмотр: модель сохраняем, рендерим 5 сек, обучение потом продолжится
+                torch.save({'state_dict': model.state_dict()}, LASTP)
+                save_state(train={'epoch': e, 'iter': it})
+                pv = make_preview(LASTP, 'iter%d' % run_it)
+                if PREVIEW_STOP and pv:
+                    raise PreviewStop()
         torch.save({'state_dict': model.state_dict()}, CKPT)
         save_state(train={'epoch': e + 1, 'iter': 0})
         log('🟢 эпоха %d/%d завершена, loss=%.4f' % (e + 1, EPOCHS, last_loss))
+        pv = make_preview(CKPT, 'epoch%d' % (e + 1))
+        if PREVIEW_STOP and pv:
+            raise PreviewStop()
     open(FLAG, 'w').write('ok')
     log('обучение завершено, модель сохранена: ' + CKPT)
 
@@ -812,6 +844,74 @@ def train_verify():
 
 
 # ─────────────────────────── ЭТАП 4: generate ───────────────────────────
+
+def run_w2l(ckpt, base, aud, out_raw):
+    """Официальный inference.py с батчами 16/4/1 и живым выводом.
+    True, если out_raw готов."""
+    infer_py = os.path.join(BASE, 'w2l_infer.py')
+    open(infer_py, 'w').write(HELPER_INFER)
+    if os.path.isfile(out_raw):
+        try:
+            os.remove(out_raw)
+        except OSError:
+            pass
+    for bs in (16, 4, 1):
+        beat('инференс, батч %d' % bs)
+        log('🟢 рендер губ: батч %d' % bs)
+        try:
+            p = run_stream('cd "%s" && OMP_NUM_THREADS=2 "%s" "%s" "%s" "%s" "%s" "%s" %d'
+                           % (W2L, sys.executable, infer_py, ckpt, base, aud, out_raw, bs), timeout=3600)
+            errtail = p.stdout[-300:]
+        except Exception as e:
+            errtail = repr(e)
+        if os.path.isfile(out_raw) and os.path.getsize(out_raw) > 200000:
+            return True
+        log('⚠️ батч %d не дал результата: %s' % (bs, errtail.replace('\n', ' ')))
+        if os.path.isfile(out_raw):
+            try:
+                os.remove(out_raw)
+            except OSError:
+                pass
+    return False
+
+
+def make_preview(ckpt, tag):
+    """Быстрый предпросмотр (первые 5 секунд), чтобы оценить результат СРАЗУ,
+    не дожидаясь конца обучения. Сбой предпросмотра не останавливает обучение."""
+    try:
+        base_full = resolve_base()
+        pb = os.path.join(BASE, 'preview_base.mp4')
+        if not (os.path.isfile(pb) and os.path.getsize(pb) > 50000):
+            p = run_cmd('"%s" -y -loglevel error -i "%s" -t 5 -c:v libx264 -pix_fmt yuv420p -an "%s"'
+                        % (FF, base_full, pb), timeout=600)
+            if p.returncode != 0 or not os.path.isfile(pb):
+                log('⚠️ предпросмотр: не удалось подготовить 5-сек видео')
+                return None
+        aud_full = resolve_audio()
+        pa = os.path.join(BASE, 'preview_audio.wav')
+        if not (os.path.isfile(pa) and os.path.getsize(pa) > 10000):
+            p = run_cmd('"%s" -y -loglevel error -i "%s" -t 5 -ar 16000 -ac 1 "%s"'
+                        % (FF, aud_full, pa), timeout=300)
+            if p.returncode != 0 or not os.path.isfile(pa):
+                log('⚠️ предпросмотр: не удалось подготовить аудио')
+                return None
+        raw = os.path.join(BASE, 'preview_raw.mp4')
+        if not run_w2l(ckpt, pb, pa, raw):
+            log('⚠️ предпросмотр не получился — обучение продолжается')
+            return None
+        out = os.path.join(BASE, 'preview_%s.mp4' % tag)
+        p = run_cmd('"%s" -y -loglevel error -i "%s" -vf "format=yuv420p" -c:v libx264 '
+                    '-crf 18 -movflags +faststart -c:a aac -b:a 128k "%s"' % (FF, raw, out), timeout=900)
+        if p.returncode != 0 or not os.path.isfile(out):
+            log('⚠️ предпросмотр: сборка mp4 не удалась')
+            return None
+        shutil.copy(out, os.path.join(BASE, 'preview_latest.mp4'))
+        log('👀 ПРЕДПРОСМОТР ГОТОВ (%s): %s — скачайте и посмотрите прямо сейчас' % (tag, out))
+        return out
+    except Exception as e:
+        log('⚠️ предпросмотр: %s: %s — обучение продолжается' % (type(e).__name__, e))
+        return None
+
 
 def resolve_base():
     b = os.path.join(BASE, 'base_last.mp4')
@@ -863,35 +963,7 @@ def gen_work():
         log('аудио подрезано до %.1f сек (под длину базового видео)' % bdur)
     if not train_verify():
         raise RuntimeError('персональная модель не грузится — нужен этап train')
-    infer_py = os.path.join(BASE, 'w2l_infer.py')
-    open(infer_py, 'w').write(
-        "import torch, runpy, sys, os\n"
-        "sys.path.insert(0, os.getcwd())\n"
-        "ckpt, face, audio, out, bs = sys.argv[1:6]\n"
-        "_tl = torch.load\n"
-        "torch.load = lambda *a, **k: _tl(*a, **{**k, 'weights_only': False})\n"
-        "sys.argv = ['i', '--checkpoint_path', ckpt, '--face', face, '--audio', audio, "
-        "'--outfile', out, '--pads', '0', '20', '0', '0', '--wav2lip_batch_size', bs]\n"
-        "runpy.run_path('inference.py', run_name='__main__')\n")
-    if os.path.isfile(RAWV):
-        os.remove(RAWV)
-    ok = False
-    for bs in (16, 4, 1):
-        beat('генерация, батч %d' % bs)
-        log('🟢 синхронизация губ: батч %d' % bs)
-        try:
-            p = run_stream('cd "%s" && OMP_NUM_THREADS=2 "%s" "%s" "%s" "%s" "%s" "%s" %d'
-                           % (W2L, sys.executable, infer_py, CKPT, base, aud, RAWV, bs), timeout=3600)
-            errtail = p.stdout[-300:]
-        except Exception as e:
-            errtail = repr(e)
-        if os.path.isfile(RAWV) and os.path.getsize(RAWV) > 200000:
-            ok = True
-            break
-        log('⚠️ батч %d не дал результата: %s' % (bs, errtail.replace('\n', ' ')))
-        if os.path.isfile(RAWV):
-            os.remove(RAWV)
-    if not ok:
+    if not run_w2l(CKPT, base, aud, RAWV):
         raise RuntimeError('синхронизация не получилась ни с одним батчем')
     if os.path.isfile(FINV):
         os.remove(FINV)
@@ -987,7 +1059,17 @@ def run_all():
         res['dataset'] = run_stage('dataset', dataset_done, frames_work, dataset_done) if res['setup'] else False
         if res['dataset']:
             disk_report('перед обучением')
-        res['train'] = run_stage('train', train_verify, train_work, train_verify) if res['dataset'] else False
+        try:
+            res['train'] = run_stage('train', train_verify, train_work, train_verify) if res['dataset'] else False
+        except PreviewStop:
+            pv = os.path.join(BASE, 'preview_latest.mp4')
+            log('═' * 56)
+            log('⏸ ОСТАНОВКА ПО ЗАПРОСУ (PREVIEW_STOP): первый предпросмотр готов.')
+            log('👀 Смотрите: ' + pv)
+            log('   Скачать: Kaggle правая панель → Output → STUDIO → preview_latest.mp4')
+            log('   Понравилось? Уберите PREVIEW_STOP=1 из ячейки и запустите её заново —')
+            log('   обучение продолжится с того же места и дойдёт до финального видео.')
+            return True
         if res['train']:
             # двойной чекпоинт больше не нужен — освобождаем ~416 МБ
             if os.path.isfile(FLAG) and os.path.isfile(LASTP):
