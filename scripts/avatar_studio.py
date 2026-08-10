@@ -997,9 +997,19 @@ SYNTH_PY = (
     "print('XTTS: done', flush=True)\n")
 
 
+def xtts_server_alive():
+    """Быстрый пинг HTTP-сервиса (5 сек). Если молчит — HTTP-стратегии вообще не пробуем."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(XTTS_URL + '/', timeout=5) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 def resolve_phrase_audio():
     """Готовит аудио тестовой фразы (клон голоса Марии). Приоритеты:
-    кеш → HTTP-сервис (30 сек) → локальный XTTS на этой машине → None (фолбэк)."""
+    кеш → HTTP-сервис (если живой) → локальный XTTS на этой машине → None (фолбэк)."""
     global PHRASE_AUD
     if not PHRASE:
         return None
@@ -1016,11 +1026,14 @@ def resolve_phrase_audio():
         run_cmd('"%s" -y -loglevel error -i "%s" -t 15 -ar 16000 -ac 1 "%s"'
                 % (FF, ref_src, voice_ref), timeout=300)
     log('🎙 синтезирую фразу клонированным голосом: "%s"' % PHRASE)
-    if xtts_synth(PHRASE, voice_ref, want, timeout=30):
-        save_state(phrase=PHRASE)
-        PHRASE_AUD = want
-        return want
-    log('🎙 сервер недоступен — запускаю локальный XTTS v2 (3–6 минут)…')
+    if xtts_server_alive():
+        if xtts_synth(PHRASE, voice_ref, want, timeout=30):
+            save_state(phrase=PHRASE)
+            PHRASE_AUD = want
+            return want
+    else:
+        log('🎙 XTTS-сервер не отвечает — пропускаю HTTP, иду сразу в локальный XTTS')
+    log('🎙 запускаю локальный XTTS v2 (3–6 минут при первой установке)…')
     if xtts_local_synth(PHRASE, voice_ref, want):
         save_state(phrase=PHRASE)
         PHRASE_AUD = want
