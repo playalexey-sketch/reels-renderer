@@ -323,18 +323,44 @@ def seg_list():
     return sorted(glob.glob(os.path.join(SEGD, 'seg_*.avi')))
 
 
-def segments_valid():
+def seg_status():
+    """Возвращает ('ok'|'partial'|'broken'|'empty', список, битые файлы).
+    'ok' — все нарезано, ничего резать НЕ надо."""
     ss = seg_list()
-    if len(ss) < 10:
-        return False
+    if not ss:
+        return 'empty', [], []
+    names = [os.path.basename(s) for s in ss]
+    n = len(names)
+    contiguous = all(names[i] == 'seg_%03d.avi' % i for i in range(n))
+    if not contiguous:
+        return 'broken', ss, []
     bad = [s for s in ss[:-1] if os.path.getsize(s) < 100000]
-    return not bad
+    return ('ok' if not bad else 'partial'), ss, bad
 
 
 def cut_segments(src):
-    if segments_valid():
-        log('сегменты уже нарезаны (%d шт) — пропускаю нарезку' % len(seg_list()))
+    """Главное правило: если куски уже нарезаны — НИЧЕГО не режем заново.
+    Чиним только битый кусок; полная перенарезка — только если всё сломано."""
+    st, ss, bad = seg_status()
+    if st == 'ok':
+        log('сегменты уже нарезаны (%d шт) — пропускаю нарезку' % len(ss))
         return
+    if st == 'partial':
+        log('сегменты уже нарезаны, битых: %d — чиню ТОЛЬКО битые, остальное не трогаю' % len(bad))
+        for s in bad:
+            idx = int(os.path.basename(s)[4:7])
+            beat('починка сегмента %d' % idx)
+            try:
+                os.remove(s)
+            except OSError:
+                pass
+            run_cmd('"%s" -y -loglevel error -ss %d -i "%s" -t 8 -r 25 -c:v mjpeg -q:v 2 "%s"'
+                    % (FF, idx * 8, src, s), timeout=600)
+        st2, ss2, _ = seg_status()
+        if st2 == 'ok':
+            log('сегменты починены точечно: %d шт, перенарезка не понадобилась' % len(ss2))
+            return
+        log('точечная починка не помогла — режу заново всё')
     for s in seg_list():
         try:
             os.remove(s)
@@ -345,7 +371,7 @@ def cut_segments(src):
     p = run_cmd('"%s" -y -loglevel error -i "%s" -r 25 -c:v mjpeg -q:v 2 '
                 '-f segment -segment_time 8 -reset_timestamps 1 "%s/seg_%%03d.avi"'
                 % (FF, src, SEGD), timeout=3600)
-    if p.returncode != 0 or not segments_valid():
+    if p.returncode != 0 or seg_status()[0] != 'ok':
         raise RuntimeError('нарезка сегментов не удалась: ' + (p.stderr or '')[-200:])
     log('нарезано сегментов: %d' % len(seg_list()))
 
@@ -374,27 +400,53 @@ def dataset_done():
     return marked >= len(ss) and n >= MIN_FRAMES
 
 
+def pending_segs():
+    """Сегменты, у которых ещё нет метки .ok/.bad — т.е. реально осталась работа."""
+    out = []
+    for seg in seg_list():
+        sid = os.path.splitext(os.path.basename(seg))[0]
+        fdir = os.path.join(DSD, sid)
+        if os.path.isfile(os.path.join(fdir, '.ok')) or os.path.isfile(os.path.join(fdir, '.bad')):
+            continue
+        out.append(seg)
+    return out
+
+
+def _ensure_audio(seg, fdir):
+    aw = os.path.join(fdir, 'audio.wav')
+    if os.path.isfile(aw) and os.path.getsize(aw) > 1000:
+        return True
+    p = run_cmd('"%s" -y -loglevel error -i "%s" -ar 16000 -ac 1 "%s"' % (FF, seg, aw), timeout=300)
+    return p.returncode == 0 and os.path.isfile(aw) and os.path.getsize(aw) > 1000
+
+
 def frames_work():
+    src = ensure_src()
+    cut_segments(src)
+    # Проверка ДО тяжёлых импортов: если всё уже готово — ничего не запускаем.
+    if dataset_done():
+        log('датасет уже собран (%d кадров) — разбор кадров пропускаю' % count_frames())
+        return
+    pend = pending_segs()
+    if not pend:
+        log('все сегменты уже обработаны ранее')
+        return
     import numpy as np
     import cv2
     sys.path.insert(0, W2L)
     import torch
-    src = ensure_src()
-    cut_segments(src)
     disk_ok(1000)
     from face_detection import FaceAlignment, LandmarksType
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     log('детектор лиц на устройстве: ' + dev)
     fa = FaceAlignment(LandmarksType._2D, flip_input=False, device=dev)
     total = count_frames()
-    log('кадров уже есть: %d, цель: %d' % (total, MAX_FRAMES))
-    for seg in seg_list():
+    log('кадров уже есть: %d, цель: %d, сегментов в очереди: %d' % (total, MAX_FRAMES, len(pend)))
+    for seg in pend:
         if total >= MAX_FRAMES:
             break
         sid = os.path.splitext(os.path.basename(seg))[0]
         fdir = os.path.join(DSD, sid)
-        if os.path.isfile(os.path.join(fdir, '.ok')) or os.path.isfile(os.path.join(fdir, '.bad')):
-            continue
         os.makedirs(fdir, exist_ok=True)
         beat('сегмент ' + sid)
         try:
@@ -409,11 +461,22 @@ def frames_work():
             if len(frames) < 25:
                 open(os.path.join(fdir, '.bad'), 'w').write('короткий')
                 continue
+            have = len(glob.glob(os.path.join(fdir, '*.jpg')))
+            if have >= len(frames):
+                # сегмент уже был разобран целиком, просто не помечен
+                if not _ensure_audio(seg, fdir):
+                    raise RuntimeError('аудио не извлечено')
+                open(os.path.join(fdir, '.ok'), 'w').write(str(len(frames)))
+                log('🟢 сегмент %s уже был готов (%d кадров) — пометил, не переделываю' % (sid, have))
+                continue
+            if have > 0:
+                log('🟢 сегмент %s: продолжаю с кадра %d/%d (готовое не трогаю)' % (sid, have, len(frames)))
             last = None
-            for i, fr in enumerate(frames):
+            for i in range(have, len(frames)):
+                fr = frames[i]
                 if total >= MAX_FRAMES:
                     break
-                if i % 5 == 0:
+                if i % 5 == 0 or last is None:
                     beat('%s: кадр %d/%d' % (sid, i, len(frames)))
                     preds = fa.get_detections_for_batch(np.array([fr]))
                     det = preds[0] if len(preds) else None
@@ -440,11 +503,8 @@ def frames_work():
                 if total % 100 == 0:
                     log('🟢 кадры: %d/%d (сейчас %s, кадр %d/%d)' % (total, MAX_FRAMES, sid, i, len(frames)))
                     disk_ok(500)
-            aw = os.path.join(fdir, 'audio.wav')
-            if not (os.path.isfile(aw) and os.path.getsize(aw) > 1000):
-                p = run_cmd('"%s" -y -loglevel error -i "%s" -ar 16000 -ac 1 "%s"' % (FF, seg, aw), timeout=300)
-                if p.returncode != 0 or not os.path.isfile(aw):
-                    raise RuntimeError('аудио не извлечено')
+            if not _ensure_audio(seg, fdir):
+                raise RuntimeError('аудио не извлечено')
             open(os.path.join(fdir, '.ok'), 'w').write(str(len(frames)))
         except Exception as e:
             log('⚠️ сегмент %s: %s: %s — пропускаю сегмент' % (sid, type(e).__name__, e))
