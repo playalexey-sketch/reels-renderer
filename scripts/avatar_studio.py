@@ -1000,8 +1000,11 @@ def xtts_local_synth(text, voice_ref, out):
         open(synth, 'w', encoding='utf-8').write(SYNTH_PY)
         log('🎙 синтезирую фразу локальным XTTS v2…')
         # MPLBACKEND=Agg: в Kaggle-ноутбуке переменная MPLBACKEND указывает на
-        # backend_inline, которого нет в чистом venv — matplotlib падал при импорте
-        p = run_stream('MPLBACKEND=Agg "%s" "%s" "%s" "%s" "%s"' % (env_py, synth, text, voice_ref, out), timeout=1800)
+        # backend_inline, которого нет в чистом venv — matplotlib падал при импорте.
+        # yes y | + COQUI_TOS_AGREED=1: при первом скачивании модели Coqui спрашивает
+        # согласие с лицензией интерактивно ([y/n]) — отвечаем автоматически.
+        p = run_stream('yes y 2>/dev/null | MPLBACKEND=Agg COQUI_TOS_AGREED=1 "%s" "%s" "%s" "%s" "%s"'
+                       % (env_py, synth, text, voice_ref, out), timeout=1800)
         okk = os.path.isfile(out) and os.path.getsize(out) > 8000
         if okk:
             log('🎙 фраза синтезирована локальным XTTS v2')
