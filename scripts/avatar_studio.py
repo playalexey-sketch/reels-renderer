@@ -428,6 +428,27 @@ def setup_verify():
 
 # ─────────────────────────── ЭТАП 2: dataset ───────────────────────────
 
+def find_input_file(exts, min_size=0, exclude_sub='', root='/kaggle/input'):
+    """Ищет в подключённых данных Kaggle самый большой файл с нужным расширением."""
+    best, best_sz = None, -1
+    if not os.path.isdir(root):
+        return None
+    for r, _, files in os.walk(root):
+        for f in files:
+            if not f.lower().endswith(exts):
+                continue
+            p = os.path.join(r, f)
+            if exclude_sub and exclude_sub in p:
+                continue
+            try:
+                sz = os.path.getsize(p)
+            except OSError:
+                continue
+            if sz >= min_size and sz > best_sz:
+                best_sz, best = sz, p
+    return best
+
+
 def ensure_src():
     if os.path.isfile(SRCV) and os.path.getsize(SRCV) > 1000000:
         return SRCV
@@ -438,7 +459,12 @@ def ensure_src():
                 cand = c
                 break
     if cand is None:
-        raise RuntimeError('исходное видео НЕ найдено: %s — задайте MARIA_VIDEO' % VIDEO)
+        cand = find_input_file(('.mp4', '.avi', '.mov'), min_size=10000000)
+        if cand:
+            log('🎥 видео найдено автоматически в данных Kaggle: ' + cand)
+    if cand is None:
+        raise RuntimeError('исходное видео НЕ найдено. Подключите его: правая панель Kaggle '
+                           '→ Add Input → ваш датасет с Maria.mp4 (или задайте MARIA_VIDEO)')
     try:
         if os.path.islink(SRCV):
             os.remove(SRCV)
@@ -1074,6 +1100,11 @@ def resolve_phrase_audio():
                 % (FF, ref_src, voice_ref), timeout=300)
     log('🎙 синтезирую фразу клонированным голосом: "%s"' % PHRASE)
     pf = os.environ.get('PHRASE_FILE', '')
+    if not (pf and os.path.isfile(pf)):
+        pf2 = find_input_file(('.wav', '.mp3'), min_size=8000, exclude_sub='mariairkhina')
+        if pf2:
+            pf = pf2
+            log('🎙 аудио фразы найдено автоматически в данных Kaggle: ' + pf)
     if pf and os.path.isfile(pf) and os.path.getsize(pf) > 8000:
         shutil.copy(pf, want)
         save_state(phrase=PHRASE)
