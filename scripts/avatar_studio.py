@@ -254,7 +254,13 @@ def run_stage(name, done_fn, work_fn, verify_fn, attempts=3):
 def setup_work():
     os.makedirs(SEGD, exist_ok=True)
     os.makedirs(DSD, exist_ok=True)
-    disk_ok(2000)
+    ck = os.path.join(W2L, 'checkpoints')
+    w0 = os.path.join(ck, 'wav2lip.pth')
+    s0 = os.path.join(ck, 's3fd.pth')
+    need_dl = not ((os.path.isfile(w0) and os.path.getsize(w0) >= 400000000)
+                   and (os.path.isfile(s0) and os.path.getsize(s0) >= 80000000))
+    if need_dl:
+        disk_ok(1500)  # место нужно только если веса придётся скачивать
     if not resolve_ffmpeg():
         log('ffmpeg не найден — ставлю imageio-ffmpeg…')
         run_cmd('%s -m pip install -q imageio-ffmpeg' % sys.executable, timeout=600)
@@ -318,7 +324,8 @@ def setup_verify():
         return False
     code = ('import sys; sys.path.insert(0, %r); '
             'from models.wav2lip import Wav2Lip; '
-            'from face_detection import FaceAlignment; print("IMPORTS_OK")') % W2L
+            'from face_detection import FaceAlignment; '
+            "print('IMPORTS_OK')") % W2L
     p = run_cmd('%s -c "%s"' % (sys.executable, code), timeout=300)
     if 'IMPORTS_OK' not in (p.stdout or ''):
         log('⚠️ проверка setup: импорты не работают: ' + (p.stderr or '')[-300:])
@@ -867,6 +874,28 @@ def _devstr():
         return '?'
 
 
+def free_space_pre():
+    """Освобождает место ДО всех этапов: лишние куски и временные файлы.
+    Ничего нужного не трогает — только хвост сверх необходимого."""
+    try:
+        if os.path.isdir(SEGD):
+            trim_segs(need_segs())
+        if os.path.isfile(RAWV):
+            try:
+                os.remove(RAWV)
+                log('💾 удалён временный raw-файл')
+            except OSError:
+                pass
+        if os.path.isfile(FLAG) and os.path.isfile(LASTP):
+            try:
+                os.remove(LASTP)
+                log('💾 удалён промежуточный чекпоинт')
+            except OSError:
+                pass
+    except Exception as e:
+        log('free_space: ' + repr(e))
+
+
 def run_all():
     global MAIN_TID, HEART
     MAIN_TID = threading.get_ident()
@@ -882,6 +911,8 @@ def run_all():
         log('кадров: %d | эпох: %d | кусков нужно: %d | watchdog: %d с | устройство: %s'
             % (MAX_FRAMES, EPOCHS, need_segs(), STALL_SEC, _devstr()))
         disk_report('старт')
+        free_space_pre()
+        disk_report('после очистки')
         res = {}
         res['setup'] = run_stage('setup', setup_verify, setup_work, setup_verify)
         if res['setup']:
