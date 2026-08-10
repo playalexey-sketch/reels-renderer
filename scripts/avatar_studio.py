@@ -66,6 +66,17 @@ S3FD_URL = 'https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth
 MAIN_TID = None
 HEART = None
 
+# При повторных запусках ячейки в том же ядре старые watchdog-потоки остаются
+# жить и начинают убивать новый конвейер. Реестр в builtins переживает
+# перезапуск модуля — глушим всех старых наблюдателей сразу.
+import builtins as _builtins
+for _h in getattr(_builtins, '_STUDIO_HEARTS', []):
+    try:
+        _h.stop()
+    except Exception:
+        pass
+_builtins._STUDIO_HEARTS = []
+
 HELPER_INFER = (
     "import torch, runpy, sys, os\n"
     "sys.path.insert(0, os.getcwd())\n"
@@ -246,6 +257,10 @@ class Heart:
         self.alive = True
         self.th = threading.Thread(target=self._loop, daemon=True)
         self.th.start()
+        try:
+            _builtins._STUDIO_HEARTS.append(self)
+        except Exception:
+            pass
 
     def beat(self, msg=None):
         self.last = time.time()
@@ -976,7 +991,7 @@ def xtts_local_synth(text, voice_ref, out):
             if p.returncode != 0:
                 log('⚠️ pip TTS: ' + ((p.stdout or '') + (p.stderr or ''))[-400:])
                 raise RuntimeError('pip install TTS не удался')
-            p = run_cmd('"%s" -c "import torch, TTS; print(\'XTTS_ENV_OK\', torch.__version__, torch.cuda.is_available())"'
+            p = run_cmd('MPLBACKEND=Agg "%s" -c "import torch, TTS; print(\'XTTS_ENV_OK\', torch.__version__, torch.cuda.is_available())"'
                         % env_py, timeout=300)
             log('🎙 окружение: ' + (p.stdout or p.stderr or '')[-200:].replace('\n', ' '))
             if 'XTTS_ENV_OK' not in (p.stdout or ''):
@@ -984,7 +999,9 @@ def xtts_local_synth(text, voice_ref, out):
         synth = os.path.join(BASE, 'xtts_synth.py')
         open(synth, 'w', encoding='utf-8').write(SYNTH_PY)
         log('🎙 синтезирую фразу локальным XTTS v2…')
-        p = run_stream('"%s" "%s" "%s" "%s" "%s"' % (env_py, synth, text, voice_ref, out), timeout=1800)
+        # MPLBACKEND=Agg: в Kaggle-ноутбуке переменная MPLBACKEND указывает на
+        # backend_inline, которого нет в чистом venv — matplotlib падал при импорте
+        p = run_stream('MPLBACKEND=Agg "%s" "%s" "%s" "%s" "%s"' % (env_py, synth, text, voice_ref, out), timeout=1800)
         okk = os.path.isfile(out) and os.path.getsize(out) > 8000
         if okk:
             log('🎙 фраза синтезирована локальным XTTS v2')
@@ -1180,6 +1197,8 @@ def gen_work():
             resolve_phrase_audio()
         aud_raw = PHRASE_AUD
     if aud_raw is None:
+        if PHRASE:
+            raise RuntimeError('фразы нет — видео не делается (правило пользователя)')
         aud_raw = resolve_audio()
     # Длина финального видео в Wav2Lip = длине аудио. Если аудио длиннее базового
     # видео — лицо начнёт «заикаться» и рендер раздувается. Режем аудио под видео.
@@ -1366,6 +1385,10 @@ def run_all():
         res['dataset'] = run_stage('dataset', dataset_done, frames_work, dataset_done) if res['setup'] else False
         if res['dataset'] and PHRASE:
             resolve_phrase_audio()   # фраза готовится ДО обучения — предпросмотры сразу с ней
+        if PHRASE and PHRASE_AUD is None:
+            log('🛑 СТОП ПО ПРАВИЛУ: фразу синтезировать не удалось — видео БЕЗ фразы не делается.')
+            log('   Причины — в строках ⚠️ выше. Исправьте и запустите ячейку ещё раз.')
+            return False
         if res['dataset']:
             disk_report('перед обучением')
         try:
