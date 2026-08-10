@@ -939,39 +939,62 @@ def xtts_synth(text, voice_ref, out, timeout=30):
 
 
 def xtts_local_synth(text, voice_ref, out):
-    """Клонирование голоса ЛОКАЛЬНО на этой машине (Coqui XTTS v2, HuggingFace).
-    Используем, когда HTTP-сервис недоступен. True — аудио записано в out."""
+    """Клонирование голоса ЛОКАЛЬНО на этой машине (Coqui XTTS v2).
+    TTS 0.22 не ставится на python>=3.12, поэтому разворачиваем изолированный
+    python 3.11 + venv (одноразово, кешируется). True — аудио записано в out."""
     try:
-        import importlib.util as _iu
-        import torch as _t
-        if _iu.find_spec('TTS') is None:
-            # torchaudio той же версии, что torch — чтобы pip НЕ трогал сам torch
-            tv = _t.__version__.split('+')[0]
-            log('🎙 ставлю пакет TTS (coqui) — пара минут…')
-            run_cmd('%s -m pip install -q "TTS==0.22.0" "torchaudio==%s"' % (sys.executable, tv), timeout=1500)
-        from TTS.api import TTS
-        dev = 'cuda' if _t.cuda.is_available() else 'cpu'
-        log('🎙 загружаю XTTS v2 (~1.8 ГБ при первом запуске)…')
-        beat('XTTS локально: загрузка модели')
-        tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2').to(dev)
-        log('🎙 синтезирую фразу локально…')
-        beat('XTTS локально: синтез')
-        tts.tts_to_file(text=text, speaker_wav=voice_ref, language='ru', file_path=out)
+        env_py = os.path.join(BASE, 'xtts_env', 'bin', 'python')
+        if not os.path.isfile(env_py):
+            log('🎙 одноразовая установка: python 3.11 + XTTS v2 (~3–5 мин)')
+            pydir = os.path.join(BASE, 'py311')
+            pybin = os.path.join(pydir, 'bin', 'python3.11')
+            if not os.path.isfile(pybin):
+                tar = os.path.join(BASE, 'py311.tar.gz')
+                download('https://github.com/indygreg/python-build-standalone/releases/'
+                         'download/20240415/cpython-3.11.9+20240415-x86_64-unknown-linux-gnu-install_only.tar.gz',
+                         tar, timeout=900)
+                run_cmd('mkdir -p "%s" && tar -xzf "%s" -C "%s" --strip-components=1'
+                        % (pydir, tar, pydir), timeout=600)
+                try:
+                    os.remove(tar)
+                except OSError:
+                    pass
+            if not os.path.isfile(pybin):
+                raise RuntimeError('python3.11 не развернулся')
+            beat('XTTS: создаю venv')
+            run_cmd('"%s" -m venv "%s"' % (pybin, os.path.join(BASE, 'xtts_env')), timeout=600)
+            beat('XTTS: ставлю torch+TTS в venv')
+            p = run_cmd('"%s" -m pip install -q torch==2.2.2+cu121 torchaudio==2.2.2+cu121 '
+                        '--index-url https://download.pytorch.org/whl/cu121 && '
+                        '"%s" -m pip install -q TTS==0.22.0' % (env_py, env_py), timeout=2400)
+            if p.returncode != 0:
+                log('⚠️ pip install XTTS: ' + ((p.stdout or '') + (p.stderr or ''))[-300:])
+                raise RuntimeError('pip install TTS не удался')
+        synth = os.path.join(BASE, 'xtts_synth.py')
+        open(synth, 'w', encoding='utf-8').write(SYNTH_PY)
+        log('🎙 синтезирую фразу локальным XTTS v2…')
+        p = run_stream('"%s" "%s" "%s" "%s" "%s"' % (env_py, synth, text, voice_ref, out), timeout=1800)
         okk = os.path.isfile(out) and os.path.getsize(out) > 8000
-        try:
-            del tts
-            import gc
-            gc.collect()
-            if _t.cuda.is_available():
-                _t.cuda.empty_cache()
-        except Exception:
-            pass
         if okk:
             log('🎙 фраза синтезирована локальным XTTS v2')
+        else:
+            log('⚠️ XTTS не выдал аудио: ' + (p.stdout or '')[-300:])
         return okk
     except Exception as e:
         log('⚠️ локальный XTTS: %r' % e)
         return False
+
+
+SYNTH_PY = (
+    "import sys, torch\n"
+    "from TTS.api import TTS\n"
+    "text, ref, out = sys.argv[1:4]\n"
+    "dev = 'cuda' if torch.cuda.is_available() else 'cpu'\n"
+    "print('XTTS: device', dev, flush=True)\n"
+    "tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2').to(dev)\n"
+    "print('XTTS: model loaded', flush=True)\n"
+    "tts.tts_to_file(text=text, speaker_wav=ref, language='ru', file_path=out)\n"
+    "print('XTTS: done', flush=True)\n")
 
 
 def resolve_phrase_audio():
@@ -1151,6 +1174,7 @@ def gen_work():
             log('💾 временный raw-файл удалён (освобождено место)')
         except OSError:
             pass
+    save_state(phrase_used=PHRASE if (PHRASE and PHRASE_AUD) else '')
     log('🎬 финальное видео: ' + FINV)
 
 
@@ -1158,6 +1182,9 @@ def gen_done():
     if not os.path.isfile(FINV) or os.path.getsize(FINV) < 200000:
         return False
     if os.path.isfile(CKPT) and os.path.getmtime(FINV) < os.path.getmtime(CKPT):
+        return False
+    if PHRASE and state().get('phrase_used') != PHRASE:
+        log('⚠️ финальное видео было без тестовой фразы — перегенерирую')
         return False
     return True
 
