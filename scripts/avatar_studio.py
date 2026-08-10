@@ -24,7 +24,7 @@ AVATAR STUDIO v2 — САМОПРОВЕРЯЮЩИЙСЯ конвейер (Kaggle
   TRAIN_EPOCHS — сколько эпох обучения (по умолчанию 2)
   STALL_SEC    — порог молчания для watchdog в секундах (по умолчанию 1800)
 """
-import os, sys, time, glob, json, shutil, subprocess, threading, traceback
+import os, sys, time, glob, json, re, shutil, subprocess, threading, traceback
 
 BASE   = os.environ.get('STUDIO_DIR', '/content/STUDIO')
 W2L    = os.path.join(BASE, 'Wav2Lip')
@@ -94,6 +94,45 @@ def run_cmd(cmd, timeout=1800, cwd=None):
     """Выполнить команду; зависание ограничено timeout (сек)."""
     return subprocess.run(cmd, shell=True, capture_output=True, text=True,
                           timeout=timeout, cwd=cwd)
+
+
+def run_stream(cmd, timeout=3600, cwd=None):
+    """Как run_cmd, но вывод команды идёт в журнал вживую и обновляет watchdog —
+    видно, что процесс реально движется, а зависание ловится честно."""
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    t0 = time.time()
+    tail = []
+    for line in p.stdout:
+        line = line.rstrip()
+        if line:
+            beat(line.strip()[:60])
+            log('   › ' + line[:160])
+            tail.append(line)
+            if len(tail) > 150:
+                tail.pop(0)
+        if time.time() - t0 > timeout:
+            p.kill()
+            raise RuntimeError('таймаут команды (%d с)' % timeout)
+    rc = p.wait()
+
+    class R:
+        returncode = rc
+        stdout = '\n'.join(tail)
+        stderr = ''
+    return R
+
+
+def media_duration(path):
+    """Длительность аудио/видео в секундах (None если не узнать)."""
+    try:
+        p = run_cmd('"%s" -i "%s"' % (FF, path), timeout=60)
+        m = re.search(r'Duration: (\d+):(\d+):([\d.]+)', (p.stderr or ''))
+        if m:
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:
+        pass
+    return None
 
 
 def disk_ok(need_mb=500):
@@ -807,7 +846,21 @@ def resolve_audio():
 
 def gen_work():
     base = resolve_base()
-    aud = resolve_audio()
+    aud_raw = resolve_audio()
+    # Длина финального видео в Wav2Lip = длине аудио. Если аудио длиннее базового
+    # видео — лицо начнёт «заикаться» и рендер раздувается. Режем аудио под видео.
+    bdur = media_duration(base)
+    adur = media_duration(aud_raw)
+    log('базовое видео: %.1f сек | аудио: %s сек'
+        % (bdur if bdur else -1, ('%.1f' % adur) if adur else '?'))
+    aud = aud_raw
+    if bdur and adur and adur > bdur + 0.5:
+        aud = os.path.join(BASE, 'gen_audio_trimmed.wav')
+        p = run_cmd('"%s" -y -loglevel error -i "%s" -t %.2f -ar 16000 -ac 1 "%s"'
+                    % (FF, aud_raw, bdur, aud), timeout=300)
+        if p.returncode != 0 or not os.path.isfile(aud):
+            raise RuntimeError('не удалось подрезать аудио под длину видео')
+        log('аудио подрезано до %.1f сек (под длину базового видео)' % bdur)
     if not train_verify():
         raise RuntimeError('персональная модель не грузится — нужен этап train')
     infer_py = os.path.join(BASE, 'w2l_infer.py')
@@ -826,13 +879,16 @@ def gen_work():
     for bs in (16, 4, 1):
         beat('генерация, батч %d' % bs)
         log('🟢 синхронизация губ: батч %d' % bs)
-        p = run_cmd('cd "%s" && OMP_NUM_THREADS=2 "%s" "%s" "%s" "%s" "%s" "%s" %d'
-                    % (W2L, sys.executable, infer_py, CKPT, base, aud, RAWV, bs), timeout=3600)
+        try:
+            p = run_stream('cd "%s" && OMP_NUM_THREADS=2 "%s" "%s" "%s" "%s" "%s" "%s" %d'
+                           % (W2L, sys.executable, infer_py, CKPT, base, aud, RAWV, bs), timeout=3600)
+            errtail = p.stdout[-300:]
+        except Exception as e:
+            errtail = repr(e)
         if os.path.isfile(RAWV) and os.path.getsize(RAWV) > 200000:
             ok = True
             break
-        tail = (p.stderr or '')[-200:].replace('\n', ' ')
-        log('⚠️ батч %d не дал результата: %s' % (bs, tail))
+        log('⚠️ батч %d не дал результата: %s' % (bs, errtail.replace('\n', ' ')))
         if os.path.isfile(RAWV):
             os.remove(RAWV)
     if not ok:
