@@ -463,6 +463,17 @@ def ensure_src():
         if cand:
             log('🎥 видео найдено автоматически в данных Kaggle: ' + cand)
     if cand is None:
+        # последний шанс: тянем датасет сами через kagglehub (встроен в Kaggle)
+        try:
+            import kagglehub
+            log('🎥 подключаю датасет Марии через kagglehub (без ручных действий)…')
+            d = str(kagglehub.dataset_download('alexeyms/mariairkhina'))
+            cand = find_input_file(('.mp4', '.avi', '.mov'), min_size=10000000, root=d)
+            if cand:
+                log('🎥 видео получено через kagglehub: ' + cand)
+        except Exception as e:
+            log('⚠️ kagglehub: ' + repr(e))
+    if cand is None:
         raise RuntimeError('исходное видео НЕ найдено. Подключите его: правая панель Kaggle '
                            '→ Add Input → ваш датасет с Maria.mp4 (или задайте MARIA_VIDEO)')
     try:
